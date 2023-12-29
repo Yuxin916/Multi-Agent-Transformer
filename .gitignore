@@ -19,3 +19,4 @@ mat/runner/shared/topo_runner.py
 mat/scripts/train/train_topo.py
 mat/scripts/train_topo.sh
 mat/scripts/results/
+mat/envs/robotarium/robotarium_python_simulator/

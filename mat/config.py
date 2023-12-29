@@ -167,7 +167,7 @@ def get_config():
                         action='store_false', default=True, help="by default, make sure random seed effective. if set, bypass such function.")
     parser.add_argument("--n_training_threads", type=int,
                         default=1, help="Number of torch threads for training")
-    parser.add_argument("--n_rollout_threads", type=int, default=32,
+    parser.add_argument("--n_rollout_threads", type=int, default=12,
                         help="Number of parallel envs for training rollouts")
     parser.add_argument("--n_eval_rollout_threads", type=int, default=1,
                         help="Number of parallel envs for evaluating rollouts")
@@ -189,11 +189,11 @@ def get_config():
 
     # network parameters
     parser.add_argument("--share_policy", action='store_false',
-                        default=True, help='Whether agent share the same policy')
+                        default=False, help='Whether agent share the same policy')
     parser.add_argument("--use_centralized_V", action='store_false',
                         default=True, help="Whether to use centralized V function")
     parser.add_argument("--stacked_frames", type=int, default=1,
-                        help="Dimension of hidden layers for actor/critic networks")
+                        help="Number of input frames which should be stack together")
     parser.add_argument("--use_stacked_frames", action='store_true',
                         default=False, help="Whether to use stacked_frames")
     parser.add_argument("--hidden_size", type=int, default=64,
@@ -215,7 +215,7 @@ def get_config():
     parser.add_argument("--use_naive_recurrent_policy", action='store_true',
                         default=False, help='Whether to use a naive recurrent policy')
     parser.add_argument("--use_recurrent_policy", action='store_true',
-                        default=False, help='use a recurrent policy')
+                        default=True, help='use a recurrent policy')
     parser.add_argument("--recurrent_N", type=int, default=1, help="The number of recurrent layers.")
     parser.add_argument("--data_chunk_length", type=int, default=10,
                         help="Time length of chunks used to train a recurrent_policy")
@@ -253,7 +253,7 @@ def get_config():
     parser.add_argument("--gae_lambda", type=float, default=0.95,
                         help='gae lambda parameter (default: 0.95)')
     parser.add_argument("--use_proper_time_limits", action='store_true',
-                        default=False, help='compute returns taking into account time limits')
+                        default=True, help='compute returns taking into account time limits')
     parser.add_argument("--use_huber_loss", action='store_false', default=True, help="by default, use huber loss. If set, do not use huber loss.")
     parser.add_argument("--use_value_active_masks",
                         action='store_false', default=True, help="by default True, whether to mask useless data in value loss.")
@@ -286,7 +286,7 @@ def get_config():
 
 
     # add for transformer
-    parser.add_argument("--encode_state", action='store_true', default=False)
+    parser.add_argument("--encode_state", action='store_true', default=False)  # 是否额外encode state
     parser.add_argument("--n_block", type=int, default=1)
     parser.add_argument("--n_embd", type=int, default=64)
     parser.add_argument("--n_head", type=int, default=1)

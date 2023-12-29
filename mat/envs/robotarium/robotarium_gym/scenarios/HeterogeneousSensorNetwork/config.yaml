@@ -1,0 +1,97 @@
+scenario: HeterogeneousSensorNetwork #name of the folder inside scenarios
+
+#### Robotarium试验场地的边界
+LEFT: -1.4
+RIGHT: 1.4
+UP: -0.9
+DOWN: .9
+# 每个robot每一个时间步移动的距离
+step_dist : 0.2
+# 是否使用随机种子[-1不随机][任意其他数字 随机]
+seed: -1
+# robot的初始位置相距彼此的最小距离
+start_dist: 0.3
+# 是否生成图片 [-1 不要图片] [当发送到Robotarium时是1]
+show_figure_frequency: -1
+
+
+
+### 在generate)coalitions.py中，根据这些参数生成coalition(也就是每个agent的特征)
+n_train_agents: 20  # 20个训练agent
+n_test_agents: 20  # 20个测试agent
+n_coalitions: 5  # 5个coalition
+# generate coalition的输出 【环境中会调用这个coalition，所以最好是N个robot分别生成】
+#coalition_file: "test_generate_coalitions.yaml"
+coalition_file: "custom_5_coalitions_4_robots.yaml"
+traits:
+  radius:
+    distribution: 'uniform'
+    low: 0.20
+    high: 0.60
+
+n_actions: 5 # 每个agent的动作空间
+n_agents: 4  # 每个coalition中的agent数量
+
+
+
+
+
+
+
+
+#model_config_file: config.json
+model_file: agent.th
+
+actor_file: gnn_agent
+actor_class: GNNAgent
+
+env_file: HeterogeneousSensorNetwork
+env_class: HeterogeneousSensorNetwork #This needs to have all of the functionalities of a gym to work
+
+episodes: 10 #Number of episodes to run for
+shared_reward: True
+
+#Arguments needed by the environment
+robotarium: False #Should be False during training to speed up robots, needs to be true when submitting
+real_time: False
+barrier_certificate: "default" #Can be safe or default for strong or weak barrier certificates
+penalize_violations: True # violation=robot collision w/ each other or boundary, does not terminate early
+end_ep_on_violation: True
+violation_penalty: -1.0
+delta: -1 #Used to determine the adjacency matrix, set to -1 for full communication
+max_episode_steps: 80
+terminate_on_success: True # If true, then when the number of prey is zero, the environment will terminate. Else environment keeps running.
+update_frequency: 29
+
+
+
+
+
+dist_reward_multiplier: 1.0
+#If the following two are False, make sure resample is also False
+capability_aware: False #Either the agent know what class they're in or their capabilities. Make sure this matches training
+agent_id: True #If capability_aware is False, this determines if the class id is appended instead or not
+dual_channel: False #KEEP FALSE, NOT USED. Changes the observations to make them a 2d array for capabilities and observations if capability_aware is true
+
+
+
+### For experiment 2, turn load_from_predefined_coalitions to false
+# 从coalition文件中加载coalition (包含训练和测试)
+load_from_predefined_coalitions: True # Load coalitions from 'predefined_coalition.yaml'. If False, then loads new agents based on traits distribution.
+load_from_predefined_agents: False # Uses the predefined agents from the predefined_coalition file, but samples new coalitions from these agents.
+# coalition文件中的训练还是测试
+test: False #Set this to change the agents that are being selected from
+manual_coalition_selection: False # IF true, the only sample the coalition coalition_selection from the colaition file for "n_agents"
+coalition_selection: 0  # 第几个team （总共5个
+
+
+
+
+shuffle_agent_order: False # this will shuffle the order of agents when coalition is sampled
+resample: True #Set to true to resample the agents every episode
+resample_frequency: 5
+
+calculate_total_overlap: True
+
+# 作者 - KEEP FALSE
+hard_coded_coalition: False
