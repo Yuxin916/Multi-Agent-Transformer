@@ -14,3 +14,8 @@ __MACOSX
 3rdparty/
 .idea/
 SMAC_Maps/
+mat/envs/topo/
+mat/runner/shared/topo_runner.py
+mat/scripts/train/train_topo.py
+mat/scripts/train_topo.sh
+mat/scripts/results/
