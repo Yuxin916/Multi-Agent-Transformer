@@ -710,6 +710,9 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
         global_state = local_obs
 
         # transfer
+        # Set the same maximum supported n_agent (27) for all agents, and padding "fake agent obs (all zero)"
+        # to the end of valid agent's obs, in order to match the input size. After inferring n_agent actions,
+        # take only the first m action (let's use m to represent the number of valid agents) for execution
         if self.target_n_agents > self.n_agents:
             for i in reversed(range(self.target_n_agents - self.n_agents)):
                 fake_agent_state = np.zeros((1, np.shape(global_state)[-1]))
