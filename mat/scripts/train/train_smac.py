@@ -83,10 +83,13 @@ def parse_args(args, parser):
 
 
 def main(args):
+    # 从config.py中获取参数
     parser = get_config()
+    # 从parse_args命令行中获取参数
     all_args = parse_args(args, parser)
 
     if all_args.algorithm_name == "mat_dec":
+        # 默认在mat_dec中actor之间共享参数
         all_args.dec_actor = True
         all_args.share_actor = True
 
@@ -103,6 +106,7 @@ def main(args):
         device = torch.device("cpu")
         torch.set_num_threads(all_args.n_training_threads)
 
+    # 创建训练环境的路径
     run_dir = Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[
                        0] + "/results") / all_args.env_name / all_args.map_name / all_args.algorithm_name / all_args.experiment_name
     if not run_dir.exists():
@@ -146,7 +150,10 @@ def main(args):
     # env
     num_agents = get_map_params(all_args.map_name)["n_agents"]
     all_args.run_dir = run_dir
+
+    # 创建多线程训练环境
     envs = make_train_env(all_args)
+    # 创建多线程测试环境
     eval_envs = make_eval_env(all_args) if all_args.use_eval else None
 
     config = {

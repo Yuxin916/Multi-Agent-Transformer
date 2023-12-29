@@ -107,6 +107,7 @@ class MATTrainer:
         value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
         adv_targ, available_actions_batch = sample
 
+        # 检查数据类型
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
@@ -114,6 +115,7 @@ class MATTrainer:
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
         # Reshape to do in a single forward pass for all steps
+        # output [episode_length * num_agents, 1]
         values, action_log_probs, dist_entropy = self.policy.evaluate_actions(share_obs_batch,
                                                                               obs_batch, 
                                                                               rnn_states_batch, 
@@ -123,12 +125,15 @@ class MATTrainer:
                                                                               available_actions_batch,
                                                                               active_masks_batch)
         # actor update
+        # 计算新旧策略比值
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
 
+        # 计算surr1和surr2
         surr1 = imp_weights * adv_targ
         surr2 = torch.clamp(imp_weights, 1.0 - self.clip_param, 1.0 + self.clip_param) * adv_targ
 
         if self._use_policy_active_masks:
+            # 死掉的agent的loss不计算
             policy_loss = (-torch.sum(torch.min(surr1, surr2),
                                       dim=-1,
                                       keepdim=True) * active_masks_batch).sum() / active_masks_batch.sum()
@@ -138,6 +143,7 @@ class MATTrainer:
         # critic update
         value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
 
+        # 把encoder和decoder的loss加起来
         loss = policy_loss - dist_entropy * self.entropy_coef + value_loss * self.value_loss_coef
 
         self.policy.optimizer.zero_grad()
@@ -160,12 +166,15 @@ class MATTrainer:
 
         :return train_info: (dict) contains information regarding training update (e.g. loss, grad norms, etc).
         """
+        # 计算advantages的均值和标准差
         advantages_copy = buffer.advantages.copy()
+        # 如果这个traj哪一步是done，那么这一步的advantage就是nan
         advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
         mean_advantages = np.nanmean(advantages_copy)
         std_advantages = np.nanstd(advantages_copy)
+        # 对advantages进行归一化 trick
         advantages = (buffer.advantages - mean_advantages) / (std_advantages + 1e-5)
-        
+        # -> (episode_length, thread, num_agents, 1 )
 
         train_info = {}
 
@@ -176,11 +185,13 @@ class MATTrainer:
         train_info['critic_grad_norm'] = 0
         train_info['ratio'] = 0
 
+        # 通常对一段通过on-policy采样的trajectory优化多个epoch
         for _ in range(self.ppo_epoch):
             data_generator = buffer.feed_forward_generator_transformer(advantages, self.num_mini_batch)
 
+            # sample出每一个batch的数据
             for sample in data_generator:
-
+                # 计算actor的loss并且更新
                 value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights \
                     = self.ppo_update(sample)
 
@@ -191,6 +202,7 @@ class MATTrainer:
                 train_info['critic_grad_norm'] += critic_grad_norm
                 train_info['ratio'] += imp_weights.mean()
 
+        # 总共更新了多少次
         num_updates = self.ppo_epoch * self.num_mini_batch
 
         for k in train_info.keys():

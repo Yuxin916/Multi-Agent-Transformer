@@ -53,6 +53,25 @@ class SharedReplayBuffer(object):
         if type(share_obs_shape[-1]) == list:
             share_obs_shape = share_obs_shape[:1]
 
+        """
+        Buffer里储存了：ALL (np.ndarray)
+        相当于把agent都存到一起了
+        1. self.share_obs: 全局状态 [episode_length + 1, 进程数量, agent数量, 全局状态维度]
+        2. self.obs: 局部状态 [episode_length + 1, 进程数量, agent数量, 局部状态维度]
+        3. self.rnn_states: actor网络的RNN状态 [episode_length + 1, 进程数量, agent数量, recurrent_N, hidden_size]
+        4. self.rnn_states_critic: critic网络的RNN状态 [episode_length + 1, 进程数量, agent数量, recurrent_N, hidden_size]
+        5. self.value_preds: critic的value预测 [episode_length + 1, 进程数量, agent数量, 1]
+        6. self.returns: [episode_length + 1, 进程数量, agent数量, 1]
+        7. self.advantages: [episode_length, 进程数量, agent数量, 1]
+        8. self.available_actions: [episode_length + 1, 进程数量, agent数量, 动作维度]
+        9. self.actions: [episode_length, 进程数量, agent数量, 动作维度]
+        10. self.action_log_probs: [episode_length, 进程数量, agent数量, 动作维度]
+        11. self.rewards: [episode_length, 进程数量, agent数量, 1]
+        12. self.masks: [episode_length + 1, 进程数量, agent数量, 1]
+        13. self.bad_masks: [episode_length + 1, 进程数量, agent数量, 1]
+        14. self.active_masks: [episode_length + 1, 进程数量, agent数量, 1]
+        15. info
+        """
         self.share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *share_obs_shape),
                                   dtype=np.float32)
         self.obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *obs_shape), dtype=np.float32)
@@ -181,24 +200,59 @@ class SharedReplayBuffer(object):
     def compute_returns(self, next_value, value_normalizer=None):
         """
         Compute returns either as discounted sum of rewards, or using GAE.
-        :param next_value: (np.ndarray) value predictions for the step after the last episode step.
-        :param value_normalizer: (PopArt) If not None, PopArt value normalizer instance.
+            next_value: (np.ndarray) value predictions for the step after the last episode step.
+            # V（s_T+1） shape=(环境数, agent数量，1)
+            value_normalizer: (ValueNorm) If not None, ValueNorm value normalizer instance.
+            # self.value_normalizer --- ValueNorm
+
+        在下面的计算过程中
+            输入： next_value [batch_size, num_agents, 1]
+            最后输出：
+                self.gae [episode_length + 1, thread, num_agents, 1]
+                self.returns [episode_length + 1， thread, num_agents, 1] 这个episode每一步的每个人的Q值
+                self.value_preds [episode_length + 1, thread, num_agents, 1] 这个episode每一步的每个人的V值
+                gae = Q - V
         """
+
+        # 把最后一个状态的状态值放到value_preds的最后一个位置, index是200
         self.value_preds[-1] = next_value
+        # 可以看成gae(200) = 0
         gae = 0
+        # timestep从后往前--倒推的方式 # 从step199到0
         for step in reversed(range(self.rewards.shape[0])):
+            # use ValueNorm
+            # 在GAE计算中，将值函数的估计值denormalize，然后再计算GAE，最后再normalize
             if self._use_popart or self._use_valuenorm:
-                delta = self.rewards[step] + self.gamma * value_normalizer.denormalize(
-                    self.value_preds[step + 1]) * self.masks[step + 1] \
-                        - value_normalizer.denormalize(self.value_preds[step])
-                gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
+                # 计算delta[step]
+                # delta[step] = r([step]) + gamma * V(s[step+1]) * mask - V(s[step]) -- 如果下一个step 不done
+                # delta[step] = r([step]) + gamma * 0 * mask - V(s[step]) -- 如果下一个step done
+                delta = (  # t时刻的delta
+                    self.rewards[step]
+                    + self.gamma
+                    * value_normalizer.denormalize(self.value_preds[step + 1])   # 在计算delta的时候denormalize
+                    * self.masks[step + 1]   # 如果下一个step 不done, self.value_preds[step + 1]才存在
+                    - value_normalizer.denormalize(self.value_preds[step]) # 在计算delta的时候denormalize
+                        )
+
+                # gae递归公式，查看https://zhuanlan.zhihu.com/p/651944382和笔记
+                # gae[step] = delta[step] + gamma * lambda * mask[t+1] * gae[t+1]
+                gae = ( # 根据t+1时刻的gae计算t时刻的gae
+                    delta
+                    +
+                    self.gamma * self.gae_lambda
+                    * self.masks[step + 1]
+                    * gae  # gae在for loop里面迭代, 这个代表的是t+1时刻的gae
+                )
 
                 # here is a patch for mpe, whose last step is timeout instead of terminate
                 if self.env_name == "MPE" and step == self.rewards.shape[0] - 1:
                     gae = 0
 
+                # 保存gae[step]到self
                 self.advantages[step] = gae
+                # Q -- V网络的标签值 = GAE(step) + V网络(step) -- 标量
                 self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
+                pass
             else:
                 delta = self.rewards[step] + self.gamma * self.value_preds[step + 1] * \
                         self.masks[step + 1] - self.value_preds[step]
@@ -210,6 +264,7 @@ class SharedReplayBuffer(object):
 
                 self.advantages[step] = gae
                 self.returns[step] = gae + self.value_preds[step]
+        pass
 
     def feed_forward_generator_transformer(self, advantages, num_mini_batch=None, mini_batch_size=None):
         """
@@ -219,8 +274,10 @@ class SharedReplayBuffer(object):
         :param mini_batch_size: (int) number of samples in each minibatch.
         """
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
+        # batchsize是环境数量*episode长度
         batch_size = n_rollout_threads * episode_length
 
+        # 产生mini_batch大小
         if mini_batch_size is None:
             assert batch_size >= num_mini_batch, (
                 "PPO requires the number of processes ({}) "
@@ -231,11 +288,32 @@ class SharedReplayBuffer(object):
                           num_mini_batch))
             mini_batch_size = batch_size // num_mini_batch
 
+        # 随机打乱0到batch_size-1
         rand = torch.randperm(batch_size).numpy()
+        # 把rand分成num_mini_batch份，每份mini_batch_size大小
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
         rows, cols = _shuffle_agent_grid(batch_size, num_agents)
 
         # keep (num_agent, dim)
+        """
+        原始的
+        1. self.share_obs: 全局状态 [episode_length + 1, 进程数量, agent数量, 全局状态维度]
+        2. self.obs: 局部状态 [episode_length + 1, 进程数量, agent数量, 局部状态维度]
+        3. self.rnn_states: actor网络的RNN状态 [episode_length + 1, 进程数量, agent数量, recurrent_N, hidden_size]
+        4. self.rnn_states_critic: critic网络的RNN状态 [episode_length + 1, 进程数量, agent数量, recurrent_N, hidden_size]
+        5. self.value_preds: critic的value预测 [episode_length + 1, 进程数量, agent数量, 1]
+        6. self.returns: [episode_length + 1, 进程数量, agent数量, 1]
+        7. self.advantages: [episode_length, 进程数量, agent数量, 1]
+        8. self.available_actions: [episode_length + 1, 进程数量, agent数量, 动作维度]
+        9. self.actions: [episode_length, 进程数量, agent数量, 动作维度]
+        10. self.action_log_probs: [episode_length, 进程数量, agent数量, 动作维度]
+        11. self.rewards: [episode_length, 进程数量, agent数量, 1]
+        12. self.masks: [episode_length + 1, 进程数量, agent数量, 1]
+        13. self.bad_masks: [episode_length + 1, 进程数量, agent数量, 1]
+        14. self.active_masks: [episode_length + 1, 进程数量, agent数量, 1]
+        新的
+        把episode_length和进程数量合并到一起 （batchsize），然后是agent数量和obs的维度
+        """
         share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[2:])
         share_obs = share_obs[rows, cols]
         obs = self.obs[:-1].reshape(-1, *self.obs.shape[2:])
@@ -262,7 +340,9 @@ class SharedReplayBuffer(object):
         advantages = advantages.reshape(-1, *advantages.shape[2:])
         advantages = advantages[rows, cols]
 
+        # 把batchsize和agent数量合并到一起 200,3,1 -》 600,1
         for indices in sampler:
+            # [L,T,N,Dim]-->[L*T,N,Dim]-->[index,N,Dim]-->[index*N, Dim]
             # [L,T,N,Dim]-->[L*T,N,Dim]-->[index,N,Dim]-->[index*N, Dim]
             share_obs_batch = share_obs[indices].reshape(-1, *share_obs.shape[2:])
             obs_batch = obs[indices].reshape(-1, *obs.shape[2:])

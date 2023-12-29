@@ -20,17 +20,21 @@ class TransformerPolicy:
     def __init__(self, args, obs_space, cent_obs_space, act_space, num_agents, device=torch.device("cpu")):
         self.device = device
         self.algorithm_name = args.algorithm_name
+        print("algorithm_name: ", self.algorithm_name)
         self.lr = args.lr
         self.opti_eps = args.opti_eps
         self.weight_decay = args.weight_decay
         self._use_policy_active_masks = args.use_policy_active_masks
+        # 判断动作空间是连续还是离散
         if act_space.__class__.__name__ == 'Box':
             self.action_type = 'Continuous'
         else:
             self.action_type = 'Discrete'
 
+        # 观测空间维度和共享观测空间维度
         self.obs_dim = get_shape_from_obs_space(obs_space)[0]
         self.share_obs_dim = get_shape_from_obs_space(cent_obs_space)[0]
+
         if self.action_type == 'Discrete':
             self.act_dim = act_space.n
             self.act_num = 1
@@ -46,6 +50,7 @@ class TransformerPolicy:
         self.num_agents = num_agents
         self.tpdv = dict(dtype=torch.float32, device=device)
 
+        # 根据算法名字选择不同的模型
         if self.algorithm_name in ["mat", "mat_dec"]:
             from mat.algorithms.mat.algorithm.ma_transformer import MultiAgentTransformer as MAT
         elif self.algorithm_name == "mat_gru":
@@ -62,24 +67,27 @@ class TransformerPolicy:
                                encode_state=args.encode_state, device=device,
                                action_type=self.action_type, dec_actor=args.dec_actor,
                                share_actor=args.share_actor)
+
         if args.env_name == "hands":
             self.transformer.zero_std()
 
         # count the volume of parameters of model
-        # Total_params = 0
-        # Trainable_params = 0
-        # NonTrainable_params = 0
-        # for param in self.transformer.parameters():
-        #     mulValue = np.prod(param.size())
-        #     Total_params += mulValue
-        #     if param.requires_grad:
-        #         Trainable_params += mulValue
-        #     else:
-        #         NonTrainable_params += mulValue
-        # print(f'Total params: {Total_params}')
-        # print(f'Trainable params: {Trainable_params}')
-        # print(f'Non-trainable params: {NonTrainable_params}')
+        # 计算模型参数量
+        Total_params = 0
+        Trainable_params = 0
+        NonTrainable_params = 0
+        for param in self.transformer.parameters():
+            mulValue = np.prod(param.size())
+            Total_params += mulValue
+            if param.requires_grad:
+                Trainable_params += mulValue
+            else:
+                NonTrainable_params += mulValue
+        print(f'Total params: {Total_params}')
+        print(f'Trainable params: {Trainable_params}')
+        print(f'Non-trainable params: {NonTrainable_params}')
 
+        # 优化器
         self.optimizer = torch.optim.Adam(self.transformer.parameters(),
                                           lr=self.lr, eps=self.opti_eps,
                                           weight_decay=self.weight_decay)
@@ -112,16 +120,21 @@ class TransformerPolicy:
         :return rnn_states_critic: (torch.Tensor) updated critic network RNN states.
         """
 
+        # reshape一下cent_obs和obs和available_actions
+        # [n_rollout_threads, num_agents, share_obs_dim]
         cent_obs = cent_obs.reshape(-1, self.num_agents, self.share_obs_dim)
+        # [n_rollout_threads, num_agents, obs_dim]
         obs = obs.reshape(-1, self.num_agents, self.obs_dim)
         if available_actions is not None:
+            # [n_rollout_threads, num_agents, act_dim]
             available_actions = available_actions.reshape(-1, self.num_agents, self.act_dim)
 
+        # 进入MAT模型获取actions，策略概率以及每一个agent的value
         actions, action_log_probs, values = self.transformer.get_actions(cent_obs,
                                                                          obs,
                                                                          available_actions,
                                                                          deterministic)
-
+        # reshape to [n_rollout_threads * num_agents, act_dim]
         actions = actions.view(-1, self.act_num)
         action_log_probs = action_log_probs.view(-1, self.act_num)
         values = values.view(-1, 1)
@@ -129,6 +142,7 @@ class TransformerPolicy:
         # unused, just for compatibility
         rnn_states_actor = check(rnn_states_actor).to(**self.tpdv)
         rnn_states_critic = check(rnn_states_critic).to(**self.tpdv)
+
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
     def get_values(self, cent_obs, obs, rnn_states_critic, masks, available_actions=None):
@@ -140,16 +154,22 @@ class TransformerPolicy:
 
         :return values: (torch.Tensor) value function predictions.
         """
-
+        # RESHAPE
         cent_obs = cent_obs.reshape(-1, self.num_agents, self.share_obs_dim)
         obs = obs.reshape(-1, self.num_agents, self.obs_dim)
         if available_actions is not None:
             available_actions = available_actions.reshape(-1, self.num_agents, self.act_dim)
-
+        """
+        cent_obs: [n_rollout_threads, num_agents, share_obs_dim]
+        obs: [n_rollout_threads, num_agents, obs_dim]
+        available_actions: [n_rollout_threads, num_agents, act_dim]
+        """
+        # [n_rollout_threads, num_agents, 1]
         values = self.transformer.get_values(cent_obs, obs, available_actions)
 
         values = values.view(-1, 1)
 
+        # (n_rollout_threads * num_agents, 1)
         return values
 
     def evaluate_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, actions, masks,
@@ -170,14 +190,17 @@ class TransformerPolicy:
         :return action_log_probs: (torch.Tensor) log probabilities of the input actions.
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
+        # reshape一下cent_obs和obs和available_actions -》 [episode, num_agents, share_obs_dim]
         cent_obs = cent_obs.reshape(-1, self.num_agents, self.share_obs_dim)
         obs = obs.reshape(-1, self.num_agents, self.obs_dim)
         actions = actions.reshape(-1, self.num_agents, self.act_num)
         if available_actions is not None:
             available_actions = available_actions.reshape(-1, self.num_agents, self.act_dim)
 
+        # (episode_length, n_agent, 1)
         action_log_probs, values, entropy = self.transformer(cent_obs, obs, actions, available_actions)
 
+        # reshape to [episode_length * num_agents, 1]
         action_log_probs = action_log_probs.view(-1, self.act_num)
         values = values.view(-1, 1)
         entropy = entropy.view(-1, self.act_num)
