@@ -91,10 +91,10 @@ class _GymmaWrapper(MultiAgentEnv):
         self._env = gym.make(f"{key}")
 
         # 环境的第一层wrapper - 限制每个episode的最大步数
-        self._env = TimeLimit(self._env, max_episode_steps=time_limit)
+        # self._env = TimeLimit(self._env, max_episode_steps=time_limit)
 
-        # 环境的第二层wrapper - 把每个agent的observation进行了flatten
-        self._env = FlattenObservation(self._env)
+        # # 环境的第二层wrapper - 把每个agent的observation进行了flatten
+        # self._env = FlattenObservation(self._env)
 
         self.n_agents = self._env.n_agents
         self._obs = None
@@ -152,14 +152,6 @@ class _GymmaWrapper(MultiAgentEnv):
         """ Returns the shape of the state"""
         return self.n_agents * flatdim(self.longest_observation_space)
 
-    def get_obs_agent(self, agent_id):
-        """ Returns observation for agent_id """
-        raise self._obs[agent_id]
-
-    def get_obs_size(self):
-        """ Returns the shape of the observation """
-        return flatdim(self.longest_observation_space)
-
     def get_action_space(self):
         return self.longest_action_space
 
@@ -210,9 +202,6 @@ class _GymmaWrapper(MultiAgentEnv):
 
     def save_replay(self):
         pass
-
-    def get_stats(self):
-        return {}
 
     def get_spaces(self):
         return self._env.observation_space, self._env.state_space, self._env.action_space

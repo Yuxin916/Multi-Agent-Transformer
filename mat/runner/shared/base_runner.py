@@ -91,10 +91,10 @@ class Runner(object):
         
         # buffer - SharedReplayBuffer
         self.buffer = SharedReplayBuffer(self.all_args,
-                                        self.num_agents,
-                                        self.envs.observation_space[0],
-                                        share_observation_space,
-                                        self.envs.action_space[0],
+                                         self.num_agents,
+                                         self.envs.observation_space[0],
+                                         share_observation_space,
+                                         self.envs.action_space[0],
                                          self.all_args.env_name)
 
     def run(self):

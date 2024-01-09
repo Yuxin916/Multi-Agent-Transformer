@@ -18,7 +18,7 @@ from mat.runner.shared.robotarium_runner import RobotariumRunner as Runner
 
 
 """Train script for Robotarium."""
-def make_train_env_2(all_args):
+def make_train_env(all_args):
     # 从args中提取出env的名字 gymmma
     env_fn = env_REGISTRY[all_args.env]
 
@@ -120,8 +120,7 @@ def main(args):
     np.random.seed(all_args.seed)
 
     # 创建多线程训练环境
-    # envs = make_train_env(all_args)
-    envs = make_train_env_2(all_args)
+    envs = make_train_env(all_args)
 
     # 创建多线程测试环境
     all_args.use_eval = False # 暂时不用测试环境
