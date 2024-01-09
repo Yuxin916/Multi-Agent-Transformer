@@ -1,11 +1,13 @@
 """
 Modified from OpenAI Baselines code to work with multi-agent envs
 """
-import numpy as np
-import torch
-from multiprocessing import Process, Pipe
 from abc import ABC, abstractmethod
+from multiprocessing import Process, Pipe
+
+import numpy as np
+
 from mat.utils.util import tile_images
+
 
 class CloudpickleWrapper(object):
     """
@@ -137,8 +139,6 @@ class ShareVecEnv(ABC):
         return self.viewer
 
 
-
-
 # class GuardSubprocVecEnv(ShareVecEnv):
 #     def __init__(self, env_fns, spaces=None):
 #         """
@@ -202,6 +202,7 @@ class SubprocVecEnv(ShareVecEnv):
     This is the wrapper for MPE envs
     N > 1
     """
+
     def __init__(self, env_fns, spaces=None):
         """
         envs: list of gym environments to run in subprocesses
@@ -240,7 +241,6 @@ class SubprocVecEnv(ShareVecEnv):
         obs = [remote.recv() for remote in self.remotes]
         return np.stack(obs)
 
-
     def reset_task(self):
         for remote in self.remotes:
             remote.send(('reset_task', None))
@@ -261,9 +261,10 @@ class SubprocVecEnv(ShareVecEnv):
     def render(self, mode="rgb_array"):
         for remote in self.remotes:
             remote.send(('render', mode))
-        if mode == "rgb_array":   
+        if mode == "rgb_array":
             frame = [remote.recv() for remote in self.remotes]
-            return np.stack(frame) 
+            return np.stack(frame)
+
 
 def worker(remote, parent_remote, env_fn_wrapper):
     """
@@ -310,6 +311,7 @@ class ShareSubprocVecEnv(ShareVecEnv):
     This is the wrapper for mujuco, google football, and starcraft2 envs
     N > 1
     """
+
     def __init__(self, env_fns, spaces=None):
         """
         envs: list of gym environments to run in subprocesses
@@ -368,6 +370,7 @@ class ShareSubprocVecEnv(ShareVecEnv):
             p.join()
         self.closed = True
 
+
 def shareworker(remote, parent_remote, env_fn_wrapper):
     """
     This is the worker function used by ShareSubprocVecEnv to simulate environment
@@ -413,18 +416,26 @@ def shareworker(remote, parent_remote, env_fn_wrapper):
         else:
             raise NotImplementedError
 
+
 class ShareSubprocVecEnv_robotarium(ShareVecEnv):
-    def __init__(self, env_fn, env_args, thread_num):
+    def __init__(self, env_fn, env_args):
         """
         envs: list of gym environments to run in subprocesses
+        和ShareSubprocVecEnv的区别是
+        1. 输入的是一个env_fn，而不是env_fn的list，还有list of env_args for all envs
+        2. 用的是env_worker_robotarium，而不是shareworker
+        3. 创建process的时候多了将env_args传入env_fn的步骤
+            intuitively 相比于ShareSubprocVecEnv里env_fn是调用了N次StarCraft2Env，这里是gym register了一次但是args是N个
+        4. step_wait里的result和StarCraft2Env顺序不一样
         """
         self.waiting = False
         self.closed = False
-        nenvs = thread_num
+        nenvs = len(env_args)
         from functools import partial
         self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
-        self.ps = [Process(target=env_worker_robotarium, args=(work_remote, remote, CloudpickleWrapper(partial(env_fn, **env_arg))))
-                   for (env_arg, work_remote, remote) in zip(env_args, self.work_remotes, self.remotes)]
+        self.ps = [Process(target=env_worker_robotarium,
+                           args=(work_remote, remote, CloudpickleWrapper(partial(env_fn, **env_arg))))
+                   for (work_remote, remote, env_arg) in zip(self.work_remotes, self.remotes, env_args)]
         for p in self.ps:
             p.daemon = True  # if the main process crashes, we should not cause things to hang
             p.start()
@@ -436,7 +447,7 @@ class ShareSubprocVecEnv_robotarium(ShareVecEnv):
         self.remotes[0].send(('get_spaces', None))
         observation_space, share_observation_space, action_space = self.remotes[0].recv(
         )
-        ShareVecEnv.__init__(self, thread_num, observation_space,
+        ShareVecEnv.__init__(self, len(env_args), observation_space,
                              share_observation_space, action_space)
 
     def step_async(self, actions):
@@ -448,7 +459,8 @@ class ShareSubprocVecEnv_robotarium(ShareVecEnv):
         results = [remote.recv() for remote in self.remotes]
         self.waiting = False
         share_obs, avail_actions, obs, adj_matrix, rews, dones, infos = zip(*results)
-        return np.stack(obs), np.stack(share_obs), np.stack(rews), np.stack(dones), infos, np.stack(avail_actions)
+        return np.stack(obs), np.stack(share_obs), np.stack(rews), np.stack(dones), \
+               infos, np.stack(avail_actions)
 
     def reset(self):
         for remote in self.remotes:
@@ -474,29 +486,42 @@ class ShareSubprocVecEnv_robotarium(ShareVecEnv):
             p.join()
         self.closed = True
 
+
 def env_worker_robotarium(remote, parent_remote, env_fn_wrapper):
+    """
+    This is the worker function used by ShareSubprocVecEnv_robotarium to simulate environment
+    """
     parent_remote.close()
     # Make environment
     # 进入这里的时候，env_fn是一个函数，调用它可以得到一个环境 -》在env文件夹的__init__.py中
     env = env_fn_wrapper.x()
-    last_env_info = None
     while True:
         cmd, data = remote.recv()
         if cmd == 'step':
-            actions = data
             # Take a step in the environment
-            reward, terminated, env_info = env.step(actions)
+            reward, terminated, env_info = env.step(data)
             # log info on change or termination
-            if last_env_info != env_info or all(terminated):
-                # if terminated: print("terminated")
-                last_env_info = env_info
-                # print("info", env_info)
+            # if last_env_info != env_info or all(terminated):
+            if 'bool' in terminated.__class__.__name__:
+                if done:
+                    ob, s_ob, available_action = env.reset()
+                else:
+                    ob = env.get_obs()
+            else:
+                if np.all(terminated):
+                    ob, s_ob, available_action = env.reset()
+                else:
+                    ob = env.get_obs()
 
             # Return the observations, avail_actions and state to make the next action
             state = env.get_state()
             avail_actions = env.get_avail_actions()
             obs = env.get_obs()
             adj_matrix = env.get_adj_matrix()
+            assert np.array([ob]).all() == np.array([obs]).all(), "ob != obs"
+            # assert s_ob == state, "s_ob != state"
+            # assert available_action == avail_actions, "available_action != avail_actions"
+
             remote.send((
                 # Data for the next timestep needed to pick an action
                 state,
@@ -524,8 +549,6 @@ def env_worker_robotarium(remote, parent_remote, env_fn_wrapper):
         elif cmd == 'get_spaces':
             remote.send(
                 (env.get_spaces()))
-        elif cmd == "get_stats":
-            remote.send(env.get_stats())
         else:
             raise NotImplementedError
 
@@ -794,11 +817,14 @@ def env_worker_robotarium(remote, parent_remote, env_fn_wrapper):
 """
 Single Parallel Env
 """
+
+
 class DummyVecEnv(ShareVecEnv):
     """
     This is the wrapper for MPE envs
     N = 1
     """
+
     def __init__(self, env_fns):
         self.envs = [fn() for fn in env_fns]
         env = self.envs[0]
@@ -842,12 +868,12 @@ class DummyVecEnv(ShareVecEnv):
             raise NotImplementedError
 
 
-
 class ShareDummyVecEnv(ShareVecEnv):
     """
     This is the wrapper for mujuco, google football, and starcraft2 envs
     N = 1
     """
+
     def __init__(self, env_fns):
         self.envs = [fn() for fn in env_fns]
         env = self.envs[0]
@@ -887,7 +913,7 @@ class ShareDummyVecEnv(ShareVecEnv):
     def save_replay(self):
         for env in self.envs:
             env.save_replay()
-    
+
     def render(self, mode="human"):
         if mode == "rgb_array":
             return np.array([env.render(mode=mode) for env in self.envs])
@@ -896,7 +922,6 @@ class ShareDummyVecEnv(ShareVecEnv):
                 env.render(mode=mode)
         else:
             raise NotImplementedError
-
 
 # class ChooseDummyVecEnv(ShareVecEnv):
 #     def __init__(self, env_fns):
