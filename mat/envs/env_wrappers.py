@@ -503,15 +503,19 @@ def env_worker_robotarium(remote, parent_remote, env_fn_wrapper):
             # log info on change or termination
             # if last_env_info != env_info or all(terminated):
             if 'bool' in terminated.__class__.__name__:
-                if done:
+                if terminated:
                     ob, s_ob, available_action = env.reset()
                 else:
                     ob = env.get_obs()
+                    s_ob = env.get_state()
+                    available_action = env.get_avail_actions()
             else:
                 if np.all(terminated):
                     ob, s_ob, available_action = env.reset()
                 else:
                     ob = env.get_obs()
+                    s_ob = env.get_state()
+                    available_action = env.get_avail_actions()
 
             # Return the observations, avail_actions and state to make the next action
             state = env.get_state()
@@ -519,10 +523,11 @@ def env_worker_robotarium(remote, parent_remote, env_fn_wrapper):
             obs = env.get_obs()
             adj_matrix = env.get_adj_matrix()
             assert np.array([ob]).all() == np.array([obs]).all(), "ob != obs"
-            # assert s_ob == state, "s_ob != state"
-            # assert available_action == avail_actions, "available_action != avail_actions"
+            assert np.array([s_ob]).all() == np.array([state]).all(), "s_ob != state"
+            assert np.array([available_action]).all() == np.array(
+                [available_actions]).all(), "available_action != avail_actions"
 
-            remote.send((
+        remote.send((
                 # Data for the next timestep needed to pick an action
                 state,
                 avail_actions,
@@ -534,8 +539,18 @@ def env_worker_robotarium(remote, parent_remote, env_fn_wrapper):
                 env_info,
             ))
         elif cmd == "reset":
-            ob, s_ob, available_actions = env.reset()
-            remote.send((ob, s_ob, available_actions))
+        ob, s_ob, available_action = env.reset()
+        obs = env.get_obs()
+        state = env.get_state()
+        available_actions = env.get_avail_actions()
+
+        assert np.array([ob]).all() == np.array([obs]).all(), "ob != obs"
+        assert np.array([s_ob]).all() == np.array([state]).all(), "s_ob != state"
+        assert np.array([available_action]).all() == np.array(
+            [available_actions]).all(), "available_action != avail_actions"
+
+        remote.send((ob, s_ob, available_actions))
+
         elif cmd == "close":
             env.close()
             remote.close()
