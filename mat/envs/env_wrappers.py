@@ -527,7 +527,7 @@ def env_worker_robotarium(remote, parent_remote, env_fn_wrapper):
             assert np.array([available_action]).all() == np.array(
                 [available_actions]).all(), "available_action != avail_actions"
 
-        remote.send((
+            remote.send((
                 # Data for the next timestep needed to pick an action
                 state,
                 avail_actions,
@@ -538,23 +538,25 @@ def env_worker_robotarium(remote, parent_remote, env_fn_wrapper):
                 terminated,
                 env_info,
             ))
+
         elif cmd == "reset":
-        ob, s_ob, available_action = env.reset()
-        obs = env.get_obs()
-        state = env.get_state()
-        available_actions = env.get_avail_actions()
+            ob, s_ob, available_action = env.reset()
+            obs = env.get_obs()
+            state = env.get_state()
+            available_actions = env.get_avail_actions()
 
-        assert np.array([ob]).all() == np.array([obs]).all(), "ob != obs"
-        assert np.array([s_ob]).all() == np.array([state]).all(), "s_ob != state"
-        assert np.array([available_action]).all() == np.array(
-            [available_actions]).all(), "available_action != avail_actions"
+            assert np.array([ob]).all() == np.array([obs]).all(), "ob != obs"
+            assert np.array([s_ob]).all() == np.array([state]).all(), "s_ob != state"
+            assert np.array([available_action]).all() == np.array(
+                [available_actions]).all(), "available_action != avail_actions"
 
-        remote.send((ob, s_ob, available_actions))
+            remote.send((ob, s_ob, available_actions))
 
         elif cmd == "close":
             env.close()
             remote.close()
             break
+
         elif cmd == 'get_num_agents':
             remote.send(env.get_num_agents())
         elif cmd == "get_env_info":
