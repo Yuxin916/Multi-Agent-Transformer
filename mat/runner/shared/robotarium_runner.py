@@ -193,8 +193,6 @@ class RobotariumRunner(Runner):
                     )
                     done_episodes_rewards = []
 
-                print("Episode return: ", aver_episode_rewards)
-
                 self.log_train(train_infos, total_num_steps)
 
             # eval
