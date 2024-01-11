@@ -32,8 +32,13 @@ class RobotariumRunner(Runner):
         # 计算总共需要跑多少个episode = 总训练时间步数 / 每个episode的时间步数 / 并行的环境数 (int)
         episodes = int(self.num_env_steps) // self.episode_length // self.n_rollout_threads
 
-        last_battles_game = np.zeros(self.n_rollout_threads, dtype=np.float32)
-        last_battles_won = np.zeros(self.n_rollout_threads, dtype=np.float32)
+        # 初始化一些logger 临时
+        train_episode_rewards = np.zeros(self.n_rollout_threads)
+        one_episode_len = np.zeros(self.n_rollout_threads, dtype=int)
+        done_episodes_rewards = []
+        episode_lens = []
+        done_episode_infos = []
+
 
         # 开始训练！！！！！！
         # 对于每一个episode
@@ -71,9 +76,43 @@ class RobotariumRunner(Runner):
                        values, actions, action_log_probs, \
                        rnn_states, rnn_states_critic
 
-                # insert data into buffer
-                """把这一步的数据存入replay buffer"""
-                self.insert(data)
+                """临时的一些log信息"""
+                # 并行环境中的每个环境是否done （n_env_threads, ）
+                dones_env = np.all(dones, axis=1)
+                # 并行环境中的每个环境的step reward （n_env_threads, ）
+                reward_env = np.mean(rewards, axis=1).flatten()
+                # 并行环境中的每个环境的episode reward （n_env_threads, ）累积
+                train_episode_rewards += reward_env
+                # 并行环境中的每个环境的episode len （n_env_threads, ）累积
+                one_episode_len += 1
+
+                for t in range(self.n_rollout_threads):
+                    # 如果这个环境的episode结束了
+                    if dones_env[t]:
+                        # 已经done的episode的总reward
+                        done_episodes_rewards.append(train_episode_rewards[t])
+                        train_episode_rewards[t] = 0  # 归零这个以及done的episode的reward
+
+                        # 存一下这个已经done的episode的terminated step的信息
+                        done_episode_infos.append(infos[t][0])
+
+                        # 存一下这个已经done的episode的episode长度
+                        episode_lens.append(one_episode_len[t].copy())
+                        one_episode_len[t] = 0  # 归零这个以及done的episode的episode长度
+
+                        # 检查环境保存的episode reward和episode len与算法口的信息是否一致
+                        # if not self.done_episode_infos[t]['episode_return'] * self.env_args['n_agents'] == \
+                        #        self.done_episodes_rewards[t]:
+                        #     print('stop here')
+                        assert done_episode_infos[t]['episode_return'] * self.num_agents == \
+                               done_episodes_rewards[t], 'episode reward not match'
+                        # 检查环境保存的episode reward和episode len与算法口的信息是否一致
+                        assert done_episode_infos[t]['episode_steps'] == episode_lens[
+                            t], 'episode len not match'
+
+                    # insert data into buffer
+                    """把这一步的数据存入replay buffer"""
+                    self.insert(data)
 
             # 收集完了一个episode的所有timestep data，开始计算return
             # compute Q and V using GAE
@@ -85,14 +124,14 @@ class RobotariumRunner(Runner):
             # post process
             total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
             # save model
-            if (episode % self.save_interval == 0 or episode == episodes - 1):
+            if episode % self.save_interval == 0 or episode == episodes - 1:
                 self.save(episode)
 
             # log information
             if episode % self.log_interval == 0:
                 end = time.time()
                 print("\n Env {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n"
-                      .format(self.all_args.env_args['key'],
+                      .format(self.all_args.env_name,
                               self.algorithm_name,
                               self.experiment_name,
                               episode,
@@ -101,20 +140,61 @@ class RobotariumRunner(Runner):
                               self.num_env_steps,
                               int(total_num_steps / (end - start))))
 
-                violation_occurred = []
-                total_overlap = []
+                # 记录每个episode的平均total overlap
+                average_total_overlap = np.mean([info["total_overlap"] for info in done_episode_infos])
+                self.writter.add_scalars(
+                    "average_total_overlap",
+                    {"average_total_overlap": average_total_overlap},
+                    total_num_steps,
+                )
+                # 记录每个episode的平均total reward
+                average_total_reward = np.mean([info["episode_return"] for info in done_episode_infos])
 
-                for i, info in enumerate(infos):
-                    if 'violation_occurred' in info[0].keys():
-                        violation_occurred.append(info[0]['violation_occurred'])
-                    if 'total_overlap' in info[0].keys():
-                        total_overlap.append(info[0]['total_overlap'])
+                # 记录每个episode的平均edge count
+                average_edge_count = np.mean([info["edge_count"] for info in done_episode_infos])
+                self.writter.add_scalars(
+                    "average_edge_count",
+                    {"average_edge_count": average_edge_count},
+                    total_num_steps,
+                )
 
-                if self.use_wandb:
-                    wandb.log({"total_overlap": total_overlap}, step=total_num_steps)
-                else:
-                    self.writter.add_scalars("All thread total_overlap", {"total_overlap": sum(total_overlap)}, total_num_steps)
-                    self.writter.add_scalars("All thread violation_occurred", {"violation_occurred": sum(violation_occurred)}, total_num_steps)
+                # 记录每个episode的平均violations
+                average_violations = np.mean([info["violation_occurred"] for info in done_episode_infos])
+                self.writter.add_scalars(
+                    "average_violations",
+                    {"average_violations": average_violations},
+                    total_num_steps,
+                )
+                done_episode_infos = []
+
+                # 记录每个episode的平均episode length
+                average_episode_len = (
+                    np.mean(episode_lens) if len(episode_lens) > 0 else 0.0
+                )
+                episode_lens = []
+                self.writter.add_scalars(
+                    "average_episode_length",
+                    {"average_episode_length": average_episode_len},
+                    total_num_steps,
+                )
+
+                # 记录每个episode的平均 episode reward
+                if len(done_episodes_rewards) > 0:
+                    aver_episode_rewards = np.mean(done_episodes_rewards)
+                    print(
+                        "Some episodes done, average episode reward is {}.\n".format(
+                            aver_episode_rewards
+                        )
+                    )
+                    self.writter.add_scalars(
+                        "train_episode_rewards",
+                        {"aver_rewards": aver_episode_rewards},
+                        total_num_steps,
+                    )
+                    done_episodes_rewards = []
+
+                print("Episode return: ", aver_episode_rewards)
+
                 self.log_train(train_infos, total_num_steps)
 
             # eval
@@ -169,10 +249,8 @@ class RobotariumRunner(Runner):
 
         dones_env = np.all(dones, axis=1)
 
-        rnn_states[dones_env == True] = np.zeros(
-            ((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-        rnn_states_critic[dones_env == True] = np.zeros(
-            ((dones_env == True).sum(), self.num_agents, *self.buffer.rnn_states_critic.shape[3:]), dtype=np.float32)
+        rnn_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+        rnn_states_critic[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, *self.buffer.rnn_states_critic.shape[3:]), dtype=np.float32)
 
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         masks[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
@@ -181,25 +259,13 @@ class RobotariumRunner(Runner):
         active_masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
         active_masks[dones_env == True] = np.ones(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
 
-        bad_masks = np.array(
-            [
-                [
-                    [0.0]
-                    if "bad_transition" in info[agent_id].keys()
-                        and info[agent_id]['bad_transition'] == True
-                    else [1.0]
-                    for agent_id in range(self.num_agents)
-                ]
-                for info in infos
-            ]
-        )
+        bad_masks = np.array([[[0.0] if info[agent_id]['bad_transition'] else [1.0] for agent_id in range(self.num_agents)] for info in infos])
 
         if not self.use_centralized_V:
             share_obs = obs
 
         self.buffer.insert(share_obs, obs, rnn_states, rnn_states_critic,
-                           actions, action_log_probs, values, rewards, masks, bad_masks, active_masks,
-                           available_actions)
+                           actions, action_log_probs, values, rewards, masks, bad_masks, active_masks, available_actions)
 
     def log_train(self, train_infos, total_num_steps):
         train_infos["average_step_rewards"] = np.mean(self.buffer.rewards)
@@ -211,62 +277,4 @@ class RobotariumRunner(Runner):
 
     @torch.no_grad()
     def eval(self, total_num_steps):
-        eval_battles_won = 0
-        eval_episode = 0
-
-        eval_episode_rewards = []
-        one_episode_rewards = []
-
-        eval_obs, eval_share_obs, eval_available_actions = self.eval_envs.reset()
-
-        eval_rnn_states = np.zeros((self.n_eval_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size),
-                                   dtype=np.float32)
-        eval_masks = np.ones((self.n_eval_rollout_threads, self.num_agents, 1), dtype=np.float32)
-
-        while True:
-
-            self.trainer.prep_rollout()
-            eval_actions, eval_rnn_states = \
-                self.trainer.policy.act(np.concatenate(eval_share_obs),
-                                        np.concatenate(eval_obs),
-                                        np.concatenate(eval_rnn_states),
-                                        np.concatenate(eval_masks),
-                                        np.concatenate(eval_available_actions),
-                                        deterministic=True)
-            eval_actions = np.array(np.split(_t2n(eval_actions), self.n_eval_rollout_threads))
-            eval_rnn_states = np.array(np.split(_t2n(eval_rnn_states), self.n_eval_rollout_threads))
-
-            # Obser reward and next obs
-            eval_obs, eval_share_obs, eval_rewards, eval_dones, eval_infos, eval_available_actions = self.eval_envs.step(
-                eval_actions)
-            one_episode_rewards.append(eval_rewards)
-
-            eval_dones_env = np.all(eval_dones, axis=1)
-
-            eval_rnn_states[eval_dones_env == True] = np.zeros(
-                ((eval_dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-
-            eval_masks = np.ones((self.all_args.n_eval_rollout_threads, self.num_agents, 1), dtype=np.float32)
-            eval_masks[eval_dones_env == True] = np.zeros(((eval_dones_env == True).sum(), self.num_agents, 1),
-                                                          dtype=np.float32)
-
-            for eval_i in range(self.n_eval_rollout_threads):
-                if eval_dones_env[eval_i]:
-                    eval_episode += 1
-                    eval_episode_rewards.append(np.sum(one_episode_rewards, axis=0))
-                    one_episode_rewards = []
-                    if eval_infos[eval_i][0]['won']:
-                        eval_battles_won += 1
-
-            if eval_episode >= self.all_args.eval_episodes:
-                # self.eval_envs.save_replay()
-                eval_episode_rewards = np.array(eval_episode_rewards)
-                eval_env_infos = {'eval_average_episode_rewards': eval_episode_rewards}
-                self.log_env(eval_env_infos, total_num_steps)
-                eval_win_rate = eval_battles_won / eval_episode
-                print("eval win rate is {}.".format(eval_win_rate))
-                if self.use_wandb:
-                    wandb.log({"eval_win_rate": eval_win_rate}, step=total_num_steps)
-                else:
-                    self.writter.add_scalars("eval_win_rate", {"eval_win_rate": eval_win_rate}, total_num_steps)
-                break
+        pass

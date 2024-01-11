@@ -6,36 +6,16 @@ import setproctitle
 import numpy as np
 from pathlib import Path
 import torch
+
 sys.path.append("../../")
-from multiprocessing import Pipe, Process
 from mat.config import get_config
-from mat.envs import REGISTRY as env_REGISTRY
-from functools import partial
 import yaml
+from functools import partial
+from multiprocessing import Pipe, Process
 from types import SimpleNamespace as SN
-from mat.envs.env_wrappers import ShareSubprocVecEnv_robotarium
 from mat.runner.shared.robotarium_runner import RobotariumRunner as Runner
-
-
+from mat.algorithms.mat.env_tools import make_train_env_robo, make_eval_env_robo
 """Train script for Robotarium."""
-def make_train_env(all_args):
-    # 从args中提取出env的名字 gymmma
-    env_fn = env_REGISTRY[all_args.env]
-
-    # 设置环境的随机种子 - 是从算法args中提取出来的
-    all_args.env_args["seed"] = all_args.seed
-    # 从args中单独提取出env_args，生成多进程的env_args
-    env_args = [all_args.env_args.copy() for _ in range(all_args.n_rollout_threads)]
-    # 对于每一个进程，都将env_args中的seed加上一个偏移量
-    for i in range(all_args.n_rollout_threads):
-        env_args[i]["seed"] += i
-
-    assert all_args.n_rollout_threads > 1, "The number of rollout threads for robotarium must be greater than 1."
-
-    return ShareSubprocVecEnv_robotarium(env_fn, env_args, all_args.n_rollout_threads)
-
-def make_eval_env(all_args):
-    raise NotImplementedError
 
 
 def parse_args(args, parser):
@@ -44,21 +24,16 @@ def parse_args(args, parser):
     # parser.add_argument('--key', type=str, default="robotarium_gym:HeterogeneousSensorNetwork-v0",
     #                     help='Key for the environment')
 
-
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
 
+
 def main(args):
     # 从算法config.py中获取参数
     parser = get_config()
-    config = SN(**vars(parser.parse_args()))
-    # 读取gymma里面的env参数
-    with open('/home/tsaisplus/MuRPE_base/Multi-Agent-Transformer/mat/envs/robotarium/gymma.yaml') as stream:
-        gymma_args = yaml.safe_load(stream)
-    gymma_args = SN(**gymma_args)
-    # combine the two namespaces
-    all_args = SN(**vars(config), **vars(gymma_args))
+    # 从parse_args命令行中获取参数
+    all_args = parse_args(args, parser)
 
     if all_args.algorithm_name == "mat_dec":
         # 默认在mat_dec中actor之间共享参数
@@ -119,16 +94,18 @@ def main(args):
     torch.cuda.manual_seed_all(all_args.seed)
     np.random.seed(all_args.seed)
 
+    # env
+    num_agents = envs.n_agents
+    all_args.run_dir = run_dir
+
     # 创建多线程训练环境
-    envs = make_train_env(all_args)
+    envs = make_train_env_robo(all_args.n_rollout_threads, all_args.seed)
 
     # 创建多线程测试环境
-    all_args.use_eval = False # 暂时不用测试环境
-    eval_envs = make_eval_env(all_args) if all_args.use_eval else None
+    all_args.use_eval = False  # 暂时不用测试环境
+    eval_envs = make_eval_env_robo(all_args) if all_args.use_eval else None
 
-    # env
-    all_args.run_dir = run_dir
-    num_agents = envs.n_agents
+
 
     config = {
         "all_args": all_args,
@@ -152,7 +129,8 @@ def main(args):
     else:
         runner.writter.export_scalars_to_json(str(runner.log_dir + '/summary.json'))
         runner.writter.close()
-    pass
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+

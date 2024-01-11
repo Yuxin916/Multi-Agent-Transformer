@@ -161,7 +161,7 @@ class Encoder(nn.Module):
         # state: (n_rollout_thread, n_agent, state_dim)
         # obs: (n_rollout_thread, n_agent, obs_dim)
         if self.encode_state:
-            assert self.encode_state == False
+            # assert self.encode_state == False
             state_embeddings = self.state_encoder(state)
             x = state_embeddings
         else:
