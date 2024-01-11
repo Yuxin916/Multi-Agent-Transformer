@@ -6,6 +6,7 @@ from tensorboardX import SummaryWriter
 from mat.utils.shared_buffer import SharedReplayBuffer
 from mat.algorithms.mat.mat_trainer import MATTrainer as TrainAlgo
 from mat.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
+from mat.utils.util import save_config
 
 def _t2n(x):
     """Convert torch tensor to a numpy array."""
@@ -72,6 +73,9 @@ class Runner(object):
         print("obs_space: ", self.envs.observation_space)
         print("share_obs_space: ", self.envs.share_observation_space)
         print("act_space: ", self.envs.action_space)
+
+        # 保存参数
+        save_config(self.all_args, self.run_dir)
 
         # policy network - TransformerPolicy
         # 初始化了MAT的encoder和decoder

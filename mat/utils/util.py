@@ -1,6 +1,57 @@
 import numpy as np
 import math
 import torch
+"""Tools for loading and updating configs."""
+import time
+import os
+import json
+import yaml
+from uu import Error
+
+def is_json_serializable(value):
+    """Check if v is JSON serializable."""
+    try:
+        json.dumps(value)
+        return True
+    except Error:
+        return False
+
+
+def convert_json(obj):
+    """Convert obj to a version which can be serialized with JSON."""
+    if is_json_serializable(obj):
+        return obj
+    else:
+        if isinstance(obj, dict):
+            return {convert_json(k): convert_json(v) for k, v in obj.items()}
+
+        elif isinstance(obj, tuple):
+            return (convert_json(x) for x in obj)
+
+        elif isinstance(obj, list):
+            return [convert_json(x) for x in obj]
+
+        elif hasattr(obj, "__name__") and not ("lambda" in obj.__name__):
+            return convert_json(obj.__name__)
+
+        elif hasattr(obj, "__dict__") and obj.__dict__:
+            obj_dict = {
+                convert_json(k): convert_json(v) for k, v in obj.__dict__.items()
+            }
+            return {str(obj): obj_dict}
+
+        return str(obj)
+
+
+def save_config(all_args, run_dir):
+    """Save the configuration of the program."""
+    if hasattr(all_args, 'run_dir'):
+        delattr(all_args, 'run_dir')
+    config = {"args": vars(all_args)}
+    config_json = convert_json(config)
+    output = json.dumps(config_json, separators=(",", ":\t"), indent=4, sort_keys=True)
+    with open(os.path.join(run_dir, "config.json"), "w", encoding="utf-8") as out:
+        out.write(output)
 
 def check(input):
     if type(input) == np.ndarray:
