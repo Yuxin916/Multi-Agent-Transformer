@@ -94,18 +94,18 @@ def main(args):
     torch.cuda.manual_seed_all(all_args.seed)
     np.random.seed(all_args.seed)
 
+    # 创建多线程训练环境
+    envs = make_train_env_robo(all_args.n_rollout_threads, all_args.seed)
+
     # env
     num_agents = envs.n_agents
     all_args.run_dir = run_dir
-
-    # 创建多线程训练环境
-    envs = make_train_env_robo(all_args.n_rollout_threads, all_args.seed)
 
     # 创建多线程测试环境
     all_args.use_eval = False  # 暂时不用测试环境
     eval_envs = make_eval_env_robo(all_args) if all_args.use_eval else None
 
-
+    all_args.episode_length = 80
 
     config = {
         "all_args": all_args,

@@ -259,7 +259,18 @@ class RobotariumRunner(Runner):
         active_masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
         active_masks[dones_env == True] = np.ones(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
 
-        bad_masks = np.array([[[0.0] if info[agent_id]['bad_transition'] else [1.0] for agent_id in range(self.num_agents)] for info in infos])
+        bad_masks = np.array(
+            [
+                [
+                    [0.0]
+                    if "bad_transition" in info[agent_id].keys()
+                       and info[agent_id]['bad_transition'] == True
+                    else [1.0]
+                    for agent_id in range(self.num_agents)
+                ]
+                for info in infos
+            ]
+        )
 
         if not self.use_centralized_V:
             share_obs = obs
