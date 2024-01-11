@@ -452,6 +452,7 @@ class ShareSubprocVecEnv_robotarium(ShareVecEnv):
 
     def step_async(self, actions):
         for remote, action in zip(self.remotes, actions):
+            # send action to each env. action ndarray(n_agents, 1)
             remote.send(('step', action))
         self.waiting = True
 
