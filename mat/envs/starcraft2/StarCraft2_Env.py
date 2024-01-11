@@ -376,7 +376,7 @@ class StarCraft2Env(MultiAgentEnv):
                 for row in vals], dtype=bool))
         else:
             self.pathing_grid = np.invert(np.flip(np.transpose(np.array(
-                list(map_info.pathing_grid.data), dtype=np.bool).reshape(
+                list(map_info.pathing_grid.data), dtype=bool).reshape(
                     self.map_x, self.map_y)), axis=1))
 
         self.terrain_height = np.flip(
