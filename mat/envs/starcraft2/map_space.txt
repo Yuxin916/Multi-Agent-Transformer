@@ -1,0 +1,235 @@
+map: 3m
+obs_dim: 64
+share_obs_dim: 81
+act_dim: 9
+
+map: 8m
+obs_dim: 204
+share_obs_dim: 251
+act_dim: 14
+
+map: 25m
+obs_dim: 1054
+share_obs_dim: 1203
+act_dim: 31
+
+map: 5m_vs_6m
+obs_dim: 124
+share_obs_dim: 156
+act_dim: 12
+
+map: 8m_vs_9m
+obs_dim: 217
+share_obs_dim: 267
+act_dim: 15
+
+map: 10m_vs_11m
+obs_dim: 289
+share_obs_dim: 351
+act_dim: 17
+
+map: 27m_vs_30m
+obs_dim: 1288
+share_obs_dim: 1458
+act_dim: 36
+
+map: MMM
+obs_dim: 334
+share_obs_dim: 393
+act_dim: 16
+
+map: MMM2
+obs_dim: 370
+share_obs_dim: 435
+act_dim: 18
+
+map: 2s3z
+obs_dim: 144
+share_obs_dim: 173
+act_dim: 11
+
+map: 3s5z
+obs_dim: 252
+share_obs_dim: 299
+act_dim: 14
+
+map: 3s5z_vs_3s6z
+obs_dim: 268
+share_obs_dim: 318
+act_dim: 15
+
+map: 3s_vs_3z
+obs_dim: 70
+share_obs_dim: 87
+act_dim: 9
+
+map: 3s_vs_4z
+obs_dim: 79
+share_obs_dim: 99
+act_dim: 10
+
+map: 3s_vs_5z
+obs_dim: 88
+share_obs_dim: 111
+act_dim: 11
+
+map: 1c3s5z
+obs_dim: 310
+share_obs_dim: 363
+act_dim: 15
+
+map: 2m_vs_1z
+obs_dim: 36
+share_obs_dim: 44
+act_dim: 7
+
+map: corridor
+obs_dim: 346
+share_obs_dim: 435
+act_dim: 30
+
+map: 6h_vs_8z
+obs_dim: 172
+share_obs_dim: 213
+act_dim: 14
+
+map: 2s_vs_1sc
+obs_dim: 37
+share_obs_dim: 45
+act_dim: 7
+
+map: so_many_baneling
+obs_dim: 479
+share_obs_dim: 595
+act_dim: 38
+
+map: bane_vs_bane
+obs_dim: 1084
+share_obs_dim: 1227
+act_dim: 30
+
+map: 2c_vs_64zg
+obs_dim: 478
+share_obs_dim: 675
+act_dim: 70
+
+map: 1c2z_vs_1c1s1z
+obs_dim: 88
+share_obs_dim: 105
+act_dim: 9
+
+map: 1c2s_vs_1c1s1z
+obs_dim: 88
+share_obs_dim: 105
+act_dim: 9
+
+map: 2c1z_vs_1c1s1z
+obs_dim: 88
+share_obs_dim: 105
+act_dim: 9
+
+map: 2c1s_vs_1c1s1z
+obs_dim: 88
+share_obs_dim: 105
+act_dim: 9
+
+map: 1c1s1z_vs_1c1s1z
+obs_dim: 88
+share_obs_dim: 105
+act_dim: 9
+
+map: 3s5z_vs_4s4z
+obs_dim: 252
+share_obs_dim: 299
+act_dim: 14
+
+map: 4s4z_vs_4s4z
+obs_dim: 252
+share_obs_dim: 299
+act_dim: 14
+
+map: 5s3z_vs_4s4z
+obs_dim: 252
+share_obs_dim: 299
+act_dim: 14
+
+map: 6s2z_vs_4s4z
+obs_dim: 252
+share_obs_dim: 299
+act_dim: 14
+
+map: 2s6z_vs_4s4z
+obs_dim: 252
+share_obs_dim: 299
+act_dim: 14
+
+map: 6m_vs_6m_tz
+obs_dim: 142
+share_obs_dim: 177
+act_dim: 12
+
+map: 5m_vs_6m_tz
+obs_dim: 124
+share_obs_dim: 156
+act_dim: 12
+
+map: 3s6z_vs_3s6z
+obs_dim: 292
+share_obs_dim: 345
+act_dim: 15
+
+map: 7h_vs_8z
+obs_dim: 192
+share_obs_dim: 236
+act_dim: 14
+
+map: 2s2z_vs_zg
+obs_dim: 284
+share_obs_dim: 355
+act_dim: 26
+
+map: 1s3z_vs_zg
+obs_dim: 284
+share_obs_dim: 355
+act_dim: 26
+
+map: 3s1z_vs_zg
+obs_dim: 284
+share_obs_dim: 355
+act_dim: 26
+
+map: 2s2z_vs_zg_easy
+obs_dim: 262
+share_obs_dim: 327
+act_dim: 24
+
+map: 1s3z_vs_zg_easy
+obs_dim: 262
+share_obs_dim: 327
+act_dim: 24
+
+map: 3s1z_vs_zg_easy
+obs_dim: 262
+share_obs_dim: 327
+act_dim: 24
+
+map: 28m_vs_30m
+obs_dim: 1330
+share_obs_dim: 1503
+act_dim: 36
+
+map: 29m_vs_30m
+obs_dim: 1372
+share_obs_dim: 1548
+act_dim: 36
+
+map: 30m_vs_30m
+obs_dim: 1414
+share_obs_dim: 1593
+act_dim: 36
+
+map: MMM2_test
+obs_dim: 370
+share_obs_dim: 435
+act_dim: 18
+

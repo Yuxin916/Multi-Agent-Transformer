@@ -97,6 +97,9 @@
 3. train_smac.sh是运行一个地图，fix number of agents 
 [环境是RandomStarCraft2Env / StarCraft2Env 是否shuffle agent order 搜索# add for randomizing]
 
+4. map = 3m: obs_dim:  64 share_obs_dim:  81 act_dim:  9
+5. map = 2s3z: obs_dim:  144 share_obs_dim:  173 act_dim:  11
+
 
 ## 如何修改算法config
 在mat/configs中
