@@ -1,25 +1,37 @@
-# Multi-Agent Transformer
+[//]: # (# Multi-Agent Transformer)
 
-This is the **official implementation** of MAT. MAT is a novel neural network based on the encoder-decoder architecture that implements a multi-agent learning process through sequence models, aiming to build the bridge between MARL and SM so that the modeling power of modern sequence models, the Transformer, can be unleashed for MARL. 
+[//]: # ()
+[//]: # (This is the **official implementation** of MAT. MAT is a novel neural network based on the encoder-decoder architecture that implements a multi-agent learning process through sequence models, aiming to build the bridge between MARL and SM so that the modeling power of modern sequence models, the Transformer, can be unleashed for MARL. )
 
-**For more details, please visit our page site about Muti-Agent Transformer: https://sites.google.com/view/multi-agent-transformer.**
+[//]: # ()
+[//]: # (**For more details, please visit our page site about Muti-Agent Transformer: https://sites.google.com/view/multi-agent-transformer.**)
 
-In short, MAT:
+[//]: # ()
+[//]: # (In short, MAT:)
 
-* casts cooperative MARL into sequence modeling problems.
+[//]: # ()
+[//]: # (* casts cooperative MARL into sequence modeling problems.)
 
-* is an encoder-decoder architecture building the bridge between MARL and the Transformer.
+[//]: # ()
+[//]: # (* is an encoder-decoder architecture building the bridge between MARL and the Transformer.)
 
-* is an online RL method trained by trails and errors, which is different from previous offline approaches, e.g. Decision Transformer or GATO (more like supervised learning). 
+[//]: # ()
+[//]: # (* is an online RL method trained by trails and errors, which is different from previous offline approaches, e.g. Decision Transformer or GATO &#40;more like supervised learning&#41;. )
 
-* leverages the multi-agent advantage decomposition theorem [Kuba et.al] to render only linear time complexity for multi-agent problems and ensure a monotonic performance improvement guarantee.
+[//]: # ()
+[//]: # (* leverages the multi-agent advantage decomposition theorem [Kuba et.al] to render only linear time complexity for multi-agent problems and ensure a monotonic performance improvement guarantee.)
 
-* achieves superior performance and generalisation capability on benchmarks including StarCraftII, Multi-Agent MuJoCo, Dexterous Hands Manipulation, and Google Research Football.
+[//]: # ()
+[//]: # (* achieves superior performance and generalisation capability on benchmarks including StarCraftII, Multi-Agent MuJoCo, Dexterous Hands Manipulation, and Google Research Football.)
 
-We present GIFs below to show the architecture and dynamic data flow of MAT.
-|<img src="images/arch.gif" align="middle" width="1000" border="1"/>|
-|:-------------------------: |
-|Architecture of MAT|    
+[//]: # ()
+[//]: # (We present GIFs below to show the architecture and dynamic data flow of MAT.)
+
+[//]: # (|<img src="images/arch.gif" align="middle" width="1000" border="1"/>|)
+
+[//]: # (|:-------------------------: |)
+
+[//]: # (|Architecture of MAT|    )
  
 
 [//]: # (## Installation)
@@ -69,43 +81,66 @@ We present GIFs below to show the architecture and dynamic data flow of MAT.
 
 [//]: # (Please following the instructios in https://github.com/PKU-MARL/DexterousHands. )
 
-## How to run
-When your environment is ready, you could run shells in the "scripts" folder with algo="mat" or algo="mat_dec". For example:
+## 如何运行basline环境
+在mat/scripts中，例如
+
 ``` Bash
 ./train_mujoco.sh  # run MAT/MAT-Dec on Multi-agent MuJoCo
 ```
-If you would like to change the configs of experiments, you could modify sh files or look for config.py for more details.
+## BASELINE StarCraft II环境的一些信息
+1. train_smac_multi.sh是运行多个地图，多个agent的脚本，可以注意一下他怎么处理多agent的 
+[环境是RandomStarCraft2EnvMulti - 但是没有random agent order 搜索# feature translation # transfer] 
+
+2. train_smac_few_shot.sh是测试train_smac_multi在其他地图和其他数量agent的效果，可以注意以下对于model的读取在哪里 
+[环境是RandomStarCraft2EnvMulti]
+
+3. train_smac.sh是运行一个地图，fix number of agents 
+[环境是RandomStarCraft2Env / StarCraft2Env 是否shuffle agent order 搜索# add for randomizing]
 
 
-## Multi-Agent Sequential Decision Paradigm
+## 如何修改算法config
+在mat/configs中
 
-Conventional multi-agent learning paradigm (left) wherein all agents take actions simultaneously vs. the multi-agent sequential decision paradigm (right) where agents take actions by following a sequential order, each agent accounts for decisions from preceding agents as red arrows suggest. 
+[//]: # (## Multi-Agent Sequential Decision Paradigm)
 
-<img src="images/paradigm.jpeg" align="middle" width="1000" border="1"/>
+[//]: # ()
+[//]: # (Conventional multi-agent learning paradigm &#40;left&#41; wherein all agents take actions simultaneously vs. the multi-agent sequential decision paradigm &#40;right&#41; where agents take actions by following a sequential order, each agent accounts for decisions from preceding agents as red arrows suggest. )
 
-The key insight of the multi-agent sequential decision paradigm is the multi-agent advantage decomposition theorem (a discovery in [HATRPO/HAPPO](https://arxiv.org/abs/2109.11251) [ICLR 22, Kuba et.al], indicating the advantage of joint actions could be sequentially divided as shown below.
+[//]: # ()
+[//]: # (<img src="images/paradigm.jpeg" align="middle" width="1000" border="1"/>)
 
-<img src="images/math.png" align="middle" width="1000" border="1"/>
+[//]: # ()
+[//]: # (The key insight of the multi-agent sequential decision paradigm is the multi-agent advantage decomposition theorem &#40;a discovery in [HATRPO/HAPPO]&#40;https://arxiv.org/abs/2109.11251&#41; [ICLR 22, Kuba et.al], indicating the advantage of joint actions could be sequentially divided as shown below.)
+
+[//]: # ()
+[//]: # (<img src="images/math.png" align="middle" width="1000" border="1"/>)
 
 ## Performance Comparisons on Cooperative MARL Benchmarks
 
 MAT consistently outperforms its rivals, indicating its modeling capability for homogeneous-agent tasks (agents are interchangeable).
 
-Videos on four super-hard scenarios are shown below.
+[//]: # (Videos on four super-hard scenarios are shown below.)
 
-|<img src="images/27m_vs_30m.gif" align="middle" width="200" border="1"/>|<img src="images/MMM2.gif" align="middle" width="200" border="1"/>|<img src="images/6h_vs_8z.gif" align="middle" width="200" border="1"/>|<img src="images/3s5z_vs_3s6z.gif" align="middle" width="200" border="1"/>|
-|:-----------: |:-------------------: |:-----------: |:----------: |
-|27m vs 30m|MMM2|6h vs 8z|3s5z vs 3s6z|    
+[//]: # ()
+[//]: # (|<img src="images/27m_vs_30m.gif" align="middle" width="200" border="1"/>|<img src="images/MMM2.gif" align="middle" width="200" border="1"/>|<img src="images/6h_vs_8z.gif" align="middle" width="200" border="1"/>|<img src="images/3s5z_vs_3s6z.gif" align="middle" width="200" border="1"/>|)
+
+[//]: # (|:-----------: |:-------------------: |:-----------: |:----------: |)
+
+[//]: # (|27m vs 30m|MMM2|6h vs 8z|3s5z vs 3s6z|    )
 
 <img src="images/performance.jpeg" align="middle" width="1000" border="1"/>
 
-Demonstration and Performance comparison on Multi-Agent Mujoco HalfCheetah and  Bimanual Dexterous Hands Manipulation tasks, showing MAT's advantages in robot control for heterogeneous agents (agents are not interchangeable).
+[//]: # (Demonstration and Performance comparison on Multi-Agent Mujoco HalfCheetah and  Bimanual Dexterous Hands Manipulation tasks, showing MAT's advantages in robot control for heterogeneous agents &#40;agents are not interchangeable&#41;.)
 
-<img src="images/envs.png" align="middle" width="1000" border="1"/>
-<img src="images/mujoco.png" align="middle" width="1000" border="1"/>
+[//]: # ()
+[//]: # (<img src="images/envs.png" align="middle" width="1000" border="1"/>)
 
-Performance comparison on the Google Research Football tasks with 2-4 agents from left to right respectively, telling the same conclusion that MAT outperforms MAPPO and HAPPO.
-<img src="images/football.jpeg" align="middle" width="1000" border="1"/>
+[//]: # (<img src="images/mujoco.png" align="middle" width="1000" border="1"/>)
+
+[//]: # ()
+[//]: # (Performance comparison on the Google Research Football tasks with 2-4 agents from left to right respectively, telling the same conclusion that MAT outperforms MAPPO and HAPPO.)
+
+[//]: # (<img src="images/football.jpeg" align="middle" width="1000" border="1"/>)
 
 ## MAT as Excellent Few-short Learners
 
@@ -118,14 +153,23 @@ Few-shot performance comparison with pre-trained models on multiple SMAC tasks. 
 <img src="images/few_shot_smac.jpeg" align="middle" width="1000" border="1"/>
 
 
-## Citation
-Please cite as following if you think this work is helpful for you:
-```
-@article{wen2022multi,
-  title={Multi-Agent Reinforcement Learning is a Sequence Modeling Problem},
-  author={Wen, Muning and Kuba, Jakub Grudzien and Lin, Runji and Zhang, Weinan and Wen, Ying and Wang, Jun and Yang, Yaodong},
-  journal={arXiv preprint arXiv:2205.14953},
-  year={2022}
-}
-```
+[//]: # (## Citation)
+
+[//]: # (Please cite as following if you think this work is helpful for you:)
+
+[//]: # (```)
+
+[//]: # (@article{wen2022multi,)
+
+[//]: # (  title={Multi-Agent Reinforcement Learning is a Sequence Modeling Problem},)
+
+[//]: # (  author={Wen, Muning and Kuba, Jakub Grudzien and Lin, Runji and Zhang, Weinan and Wen, Ying and Wang, Jun and Yang, Yaodong},)
+
+[//]: # (  journal={arXiv preprint arXiv:2205.14953},)
+
+[//]: # (  year={2022})
+
+[//]: # (})
+
+[//]: # (```)
 

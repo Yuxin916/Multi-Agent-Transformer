@@ -21,6 +21,7 @@ from s2clientprotocol import common_pb2 as sc_common
 from s2clientprotocol import sc2api_pb2 as sc_pb
 from s2clientprotocol import raw_pb2 as r_pb
 from s2clientprotocol import debug_pb2 as d_pb
+# 这里的feature_translation是处理changing number of agents
 from . import feature_translation as ft
 
 import random
@@ -69,7 +70,7 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
     def __init__(
         self,
         args,
-        map_name,
+        map_name,  # 注意train_smac_multi.py中的make_train_env - which map
         step_mul=8,
         move_amount=2,
         difficulty="7",
@@ -215,9 +216,12 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
         self.add_center_xy = args.add_center_xy
         self.use_stacked_frames = args.use_stacked_frames
         self.stacked_frames = args.stacked_frames
+        self.random_agent_order = args.random_agent_order
         
         map_params = get_map_params(self.map_name)
+        # 这里读取的是当前map的实际agent number
         self.n_agents = map_params["n_agents"]
+        # 这里的target_n_agents为定值 - max number of agents - 27
         self.target_n_agents = ft.get_num_agents()
         self.n_enemies = map_params["n_enemies"]
         self.episode_limit = map_params["limit"]
@@ -314,9 +318,10 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
         self._sc2_proc = None
         self._controller = None
 
-        # add for randomizing
-        # self.agent_permutation = None
-        # self.agent_recovery = None
+        if self.random_agent_order:
+            # add for randomizing
+            self.agent_permutation = None
+            self.agent_recovery = None
 
         # Try to avoid leaking SC2 processes on shutdown
         atexit.register(lambda: self.close())
@@ -328,6 +333,7 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
             # self.action_space.append(Discrete(self.n_actions))
             # self.observation_space.append(self.get_obs_size())
             # self.share_observation_space.append(self.get_state_size())
+            # 这里的状态动作空间都是fix dim - 最大值agent=27的空间
             self.action_space.append(Discrete(ft.get_act_dim()))
             self.observation_space.append(ft.get_obs_dim())
             self.share_observation_space.append(ft.get_state_dim())
@@ -390,10 +396,10 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
                          .reshape(self.map_x, self.map_y)), 1) / 255
 
     # add for randomizing
-    # def permutate_idx(self):
-    #     self.agent_permutation = np.random.permutation(self.n_agents)
-    #     self.agent_recovery = [np.where(self.agent_permutation == i)[0][0] for i in range(self.n_agents)]
-    #     self.agent_recovery = np.array(self.agent_recovery)
+    def permutate_idx(self):
+        self.agent_permutation = np.random.permutation(self.n_agents)
+        self.agent_recovery = [np.where(self.agent_permutation == i)[0][0] for i in range(self.n_agents)]
+        self.agent_recovery = np.array(self.agent_recovery)
 
     def reset(self):
         """Reset the environment. Required after each full episode.
@@ -407,7 +413,9 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
             self._restart()
 
         # add for randomizing
-        # self.permutate_idx()
+        if self.random_agent_order:
+            # multi版本没有随机agent的顺序
+            self.permutate_idx()
 
         # Information kept for counting the reward
         self.death_tracker_ally = np.zeros(self.n_agents, dtype=np.float32)
@@ -453,11 +461,14 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
             local_obs = self.stacked_local_obs.reshape(self.n_agents, -1)
             global_state = self.stacked_global_state.reshape(self.n_agents, -1)
 
-        # add for randomizing
-        # local_obs = np.array(local_obs)[self.agent_permutation]
-        # global_state = np.array(global_state)[self.agent_permutation]
-        # available_actions = np.array(available_actions)[self.agent_permutation]
+        if self.random_agent_order:
+            # add for randomizing
+            # multi版本没有随机agent的顺序
+            local_obs = np.array(local_obs)[self.agent_permutation]
+            global_state = np.array(global_state)[self.agent_permutation]
+            available_actions = np.array(available_actions)[self.agent_permutation]
 
+        # feature translation local_obs, global_state和available_actions
         # transfer
         local_obs = ft.translate_local_obs(local_obs)
         # global_state = ft.translate_global_state(global_state)
@@ -503,13 +514,16 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
         infos = [{} for i in range(self.n_agents)]
         dones = np.zeros((self.n_agents), dtype=bool)
 
+        # feature translation actions_int
         # actions_int = [int(a) for a in actions]
 
         # transfer
         actions_int = [int(a) for a in actions][:self.n_agents]
 
-        # add for randomizing
-        # actions_int = np.array(actions_int)[self.agent_recovery].tolist()
+        if self.random_agent_order:
+            # multi版本没有随机agent的顺序
+            # add for randomizing
+            actions_int = np.array(actions_int)[self.agent_recovery].tolist()
 
         self.last_action = np.eye(self.n_actions)[np.array(actions_int)]
 
@@ -549,7 +563,7 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
                     "restarts": self.force_restarts,
                     "bad_transition": bad_transition,
                     "won": self.win_counted,
-                    "map": self.map_name
+                    "map": self.map_name  # 添加map name到info
                 }
                 if terminated:
                     dones[i] = True
@@ -576,13 +590,16 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
                 local_obs = self.stacked_local_obs.reshape(self.n_agents, -1)
                 global_state = self.stacked_global_state.reshape(self.n_agents, -1)
 
-            # add for randomizing
-            # local_obs = np.array(local_obs)[self.agent_permutation]
-            # global_state = np.array(global_state)[self.agent_permutation]
-            # dones = np.array(dones)[self.agent_permutation]
-            # infos = np.array(infos)[self.agent_permutation]
-            # available_actions = np.array(available_actions)[self.agent_permutation]
+            if self.random_agent_order:
+                # add for randomizing
+                # multi版本没有随机agent的顺序
+                local_obs = np.array(local_obs)[self.agent_permutation]
+                global_state = np.array(global_state)[self.agent_permutation]
+                dones = np.array(dones)[self.agent_permutation]
+                infos = np.array(infos)[self.agent_permutation]
+                available_actions = np.array(available_actions)[self.agent_permutation]
 
+            # feature translation local_obs，global_state，available_actions，dones，infos
             # transfer
             local_obs = ft.translate_local_obs(local_obs)
             # global_state = ft.translate_global_state(global_state)
@@ -607,7 +624,7 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
 
                     fake_info = np.array([infos[0]])
                     infos = np.append(infos, fake_info, axis=0)
-
+            # 这里return的是self.target_n_agents = 27
             return local_obs, global_state, [[0]]*self.target_n_agents, dones, infos, available_actions
 
         self._total_steps += 1
@@ -657,7 +674,7 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
                 "restarts": self.force_restarts,
                 "bad_transition": bad_transition,
                 "won": self.win_counted,
-                "map": self.map_name
+                "map": self.map_name  # 添加map name到info
             }
 
             if terminated:
@@ -696,14 +713,17 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
             local_obs = self.stacked_local_obs.reshape(self.n_agents, -1)
             global_state = self.stacked_global_state.reshape(self.n_agents, -1)
 
-        # add for randomizing
-        # local_obs = np.array(local_obs)[self.agent_permutation]
-        # global_state = np.array(global_state)[self.agent_permutation]
-        # rewards = np.array(rewards)[self.agent_permutation]
-        # dones = np.array(dones)[self.agent_permutation]
-        # infos = np.array(infos)[self.agent_permutation]
-        # available_actions = np.array(available_actions)[self.agent_permutation]
+        if self.random_agent_order:
+            # add for randomizing
+            # multi版本没有随机agent的顺序
+            local_obs = np.array(local_obs)[self.agent_permutation]
+            global_state = np.array(global_state)[self.agent_permutation]
+            rewards = np.array(rewards)[self.agent_permutation]
+            dones = np.array(dones)[self.agent_permutation]
+            infos = np.array(infos)[self.agent_permutation]
+            available_actions = np.array(available_actions)[self.agent_permutation]
 
+        # feature translation local_obs，global_state，available_actions，rewards，dones，infos
         # transfer
         local_obs = ft.translate_local_obs(local_obs)
         # global_state = ft.translate_global_state(global_state)
@@ -1934,6 +1954,7 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
         unit = self.get_unit_by_id(agent_id)
         if unit.health > 0:
             # cannot choose no-op when alive
+            # feature translation for avail_actions
             # avail_actions = [0] * self.n_actions
 
             # transfer
@@ -1975,6 +1996,7 @@ class RandomStarCraft2EnvMulti(MultiAgentEnv):
             return avail_actions
 
         else:
+            # feature translation for avail_actions
             # only no-op allowed
             # return [1] + [0] * (self.n_actions - 1)
 

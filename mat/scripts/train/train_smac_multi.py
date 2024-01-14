@@ -59,6 +59,7 @@ def parse_args(args, parser):
     parser.add_argument("--use_state_agent", action='store_false', default=True)
     parser.add_argument("--use_mustalive", action='store_false', default=True)
     parser.add_argument("--add_center_xy", action='store_false', default=True)
+    parser.add_argument("--random_agent_order", action='store_true', default=False)
 
     all_args = parser.parse_known_args(args)[0]
 
@@ -122,7 +123,9 @@ def main(args):
     torch.cuda.manual_seed_all(all_args.seed)
     np.random.seed(all_args.seed)
 
+    # 这里设置了agent数量的上限
     num_agents = 27
+
     all_args.run_dir = run_dir
     envs = make_train_env(all_args)
     eval_envs = make_eval_env(all_args) if all_args.use_eval else None
