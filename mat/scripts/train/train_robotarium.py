@@ -95,7 +95,7 @@ def main(args):
     np.random.seed(all_args.seed)
 
     # 创建多线程训练环境
-    envs = make_train_env_robo(all_args.n_rollout_threads, all_args.seed)
+    envs, envs_args = make_train_env_robo(all_args.n_rollout_threads, all_args.seed)
 
     # env
     num_agents = envs.n_agents
@@ -106,6 +106,13 @@ def main(args):
     eval_envs = make_eval_env_robo(all_args) if all_args.use_eval else None
 
     all_args.episode_length = 80
+    all_args.env_name = 'robotarium'
+    print("Env Name: ", all_args.env_name)
+    print("Scenario: ", envs_args["key"])
+
+    # 把env dict添加到all_args namespace中
+    for key, value in envs_args.items():
+        setattr(all_args, key, value)
 
     config = {
         "all_args": all_args,

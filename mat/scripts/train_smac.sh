@@ -1,5 +1,5 @@
 #!/bin/sh
-#env="StarCraft2"
+env="StarCraft2"
 map="6h_vs_8z"
 algo="mat"
 exp="single"

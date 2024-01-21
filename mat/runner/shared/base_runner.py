@@ -7,6 +7,7 @@ from mat.utils.shared_buffer import SharedReplayBuffer
 from mat.algorithms.mat.mat_trainer import MATTrainer as TrainAlgo
 from mat.algorithms.mat.algorithm.transformer_policy import TransformerPolicy as Policy
 from mat.utils.util import save_config
+from mat.envs import LOGGER_REGISTRY
 
 def _t2n(x):
     """Convert torch tensor to a numpy array."""
@@ -100,6 +101,10 @@ class Runner(object):
                                          share_observation_space,
                                          self.envs.action_space[0],
                                          self.all_args.env_name)
+        # 环境的logger
+        self.logger = LOGGER_REGISTRY[self.all_args.key](
+            self.all_args, self.num_agents, self.writter, self.run_dir
+        )
 
     def run(self):
         """Collect training data, perform training updates, and evaluate policy."""

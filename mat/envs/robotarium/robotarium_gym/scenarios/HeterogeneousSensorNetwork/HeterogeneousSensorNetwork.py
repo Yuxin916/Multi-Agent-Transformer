@@ -12,7 +12,7 @@ from robotarium_gym.utilities.misc import *
 from robotarium_gym.scenarios.HeterogeneousSensorNetwork.visualize import *
 from robotarium_gym.scenarios.base import BaseEnv
 from robotarium_python_simulator.rps.utilities.graph import *
-
+from robotarium_gym.scenarios.check_dim import *
 from robotarium_gym.utilities.misc import is_close
 import numpy as np
 
@@ -294,7 +294,6 @@ class HeterogeneousSensorNetwork(BaseEnv):
             assert self.episode_return == 0, "Episode return is not 0 at the start of the episode"
         self.episode_steps += 1
 
-
         # call the environment step function and get the updated state
         return_message = self.env.step(actions_)
 
@@ -337,6 +336,11 @@ class HeterogeneousSensorNetwork(BaseEnv):
         if terminated:
             info["episode_return"] = self.episode_return
             info["episode_steps"] = self.episode_steps
+
+        assert check_obs_dimensions(obs, self.num_robots, self.observation_space[0].shape[0]), 'obs dim wrong'
+        assert check_reward_dimensions([rewards] * self.num_robots, self.num_robots), 'reward dim wrong'
+        assert check_terminated_dimensions([terminated] * self.num_robots, self.num_robots), 'done dim wrong'
+        assert check_info_dimensions([info] * self.num_robots, self.num_robots), 'info dim wrong'
 
         return obs, [rewards] * self.num_robots, [terminated] * self.num_robots, [info] * self.num_robots
 

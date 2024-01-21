@@ -14,7 +14,7 @@ _particles = {
 
 for scenario_name, gymkey in _particles.items():
     # 把所有scenarios的名称都注册了
-    module_dir = os.path.join(os.path.dirname(__file__), 'scenarios/'+scenario_name)
+    module_dir = os.path.join(os.path.dirname(__file__), 'scenarios/' + scenario_name)
     config_path = os.path.join(module_dir, 'config.yaml')
 
     # Registers multi-agent particle environments:
@@ -24,4 +24,5 @@ for scenario_name, gymkey in _particles.items():
         kwargs={'env_name': scenario_name,
                 'config_path': config_path},
     )
-print('Registered all robotarium_gym environments...')
+
+# print('Registered all robotarium_gym environments...')

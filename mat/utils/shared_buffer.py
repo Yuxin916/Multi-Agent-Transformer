@@ -197,6 +197,10 @@ class SharedReplayBuffer(object):
         self.masks[0] = self.masks[-1].copy()
         self.bad_masks[0] = self.bad_masks[-1].copy()
 
+    def get_mean_rewards(self):
+        """Get mean rewards for logging."""
+        return np.mean(self.rewards)
+
     def compute_returns(self, next_value, value_normalizer=None):
         """
         Compute returns either as discounted sum of rewards, or using GAE.

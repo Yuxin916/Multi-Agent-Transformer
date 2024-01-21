@@ -27,7 +27,7 @@ def make_train_env_robo(n_rollout_threads, seed):
         env_args[i]["seed"] += i
 
     if n_rollout_threads > 1:
-        return ShareSubprocVecEnv_robotarium(env_fn, env_args)
+        return ShareSubprocVecEnv_robotarium(env_fn, env_args), env_args[0]
     else:
         raise NotImplementedError("The number of rollout threads must be greater than 1.")
 
