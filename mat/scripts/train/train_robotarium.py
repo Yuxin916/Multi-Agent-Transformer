@@ -34,7 +34,47 @@ def main(args):
     parser = get_config()
     # 从parse_args命令行中获取参数
     all_args = parse_args(args, parser)
+    all_args.env_name = 'robotarium'
 
+    # seed
+    torch.manual_seed(all_args.seed)
+    torch.cuda.manual_seed_all(all_args.seed)
+    np.random.seed(all_args.seed)
+
+    # 创建多线程训练环境
+    envs, envs_args = make_train_env_robo(all_args.n_rollout_threads, all_args.seed)
+
+    # 设置episode长度
+    all_args.episode_length = envs_args['time_limit']
+
+    # 打印训练环境的参数
+    print("Env Name: ", all_args.env_name)
+    print("Scenario: ", envs_args["key"])
+
+    def get_shortcut_name(scenario):
+        # Dictionary mapping full scenario names to their shortcuts
+        shortcuts = {
+            "robotarium_gym:PredatorCapturePrey-v0": "PCP",
+            "robotarium_gym:PredatorCapturePreyGNN-v0": "PCPGNN",
+            "robotarium_gym:Warehouse-v0": "WH",
+            "robotarium_gym:Simple-v0": "SMP",
+            "robotarium_gym:ArcticTransport-v0": "AT",
+            "robotarium_gym:MaterialTransport-v0": "MT",
+            "robotarium_gym:MaterialTransportGNN-v0": "MTGNN",
+            "robotarium_gym:HeterogeneousSensorNetwork-v0": "HSN"
+        }
+
+        return shortcuts.get(scenario, "Unknown Scenario")
+
+    env_short = get_shortcut_name(envs_args["key"])
+    envs_args["env_short"] = env_short
+
+    # 把env dict添加到all_args namespace中
+    for key, value in envs_args.items():
+        setattr(all_args, key, value)
+
+    # env
+    num_agents = envs.n_agents
     if all_args.algorithm_name == "mat_dec":
         # 默认在mat_dec中actor之间共享参数
         all_args.dec_actor = True
@@ -55,9 +95,11 @@ def main(args):
 
     # 创建训练环境的路径
     run_dir = Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[
-                       0] + "/results") / all_args.env_name / all_args.algorithm_name / all_args.experiment_name
+                       0] + "/results") / all_args.env_name / all_args.env_short / all_args.algorithm_name / all_args.experiment_name
+    print("run_dir: ", run_dir)
     if not run_dir.exists():
         os.makedirs(str(run_dir))
+    all_args.run_dir = run_dir
 
     if all_args.use_wandb:
         run = wandb.init(config=all_args,
@@ -85,34 +127,15 @@ def main(args):
         if not run_dir.exists():
             os.makedirs(str(run_dir))
 
+    # 设置进程名
     setproctitle.setproctitle(
-        str(all_args.algorithm_name) + "-" + str(all_args.env_name) + "-" + str(all_args.experiment_name) + "@" + str(
+        str(all_args.algorithm_name) + "-" + str(all_args.env_name) + "-" + str(all_args.env_short) + \
+        "-" + str(all_args.experiment_name) + "@" + str(
             all_args.user_name))
-
-    # seed
-    torch.manual_seed(all_args.seed)
-    torch.cuda.manual_seed_all(all_args.seed)
-    np.random.seed(all_args.seed)
-
-    # 创建多线程训练环境
-    envs, envs_args = make_train_env_robo(all_args.n_rollout_threads, all_args.seed)
-
-    # env
-    num_agents = envs.n_agents
-    all_args.run_dir = run_dir
 
     # 创建多线程测试环境
     all_args.use_eval = False  # 暂时不用测试环境
     eval_envs = make_eval_env_robo(all_args) if all_args.use_eval else None
-
-    all_args.episode_length = 80
-    all_args.env_name = 'robotarium'
-    print("Env Name: ", all_args.env_name)
-    print("Scenario: ", envs_args["key"])
-
-    # 把env dict添加到all_args namespace中
-    for key, value in envs_args.items():
-        setattr(all_args, key, value)
 
     config = {
         "all_args": all_args,
