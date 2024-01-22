@@ -24,6 +24,7 @@ class RobotariumRunner(Runner):
     def run(self):
         # 开始训练
         print("start running")
+
         # 在环境reset之后返回的obs，share_obs，available_actions存入replay buffer
         self.warmup()
 
@@ -39,6 +40,7 @@ class RobotariumRunner(Runner):
             # 学习率是否随着episode线性递减
             if self.use_linear_lr_decay:
                 self.trainer.policy.lr_decay(episode, episodes)
+                # self.policy.lr_decay(episode, episodes)
 
             # 每个episode开始的时候更新logger里面的episode index
             self.logger.episode_init(episode)
@@ -47,7 +49,7 @@ class RobotariumRunner(Runner):
             for step in range(self.episode_length):
                 # Sample actions
                 """
-                采样动作 - 进入actor network 
+                采样动作 - 进入actor network获取动作和动作的log_prob，以及critic network的value
                 values: (n_threads, n_agents, 1)
                 actions: (n_threads, n_agents, action_dim)
                 action_log_probs: (n_threads, n_agents, 1)
@@ -57,7 +59,7 @@ class RobotariumRunner(Runner):
                 values, actions, action_log_probs, rnn_states, rnn_states_critic = self.collect(step)
 
                 """
-                在得到动作后，执行动作
+                在得到动作后，执行动作 n_threads, n_agents, 1
                 与环境交互一个step，得到obs，share_obs，rewards，dones，infos，available_actions
                 # obs: (n_threads, n_agents, obs_dim)
                 # share_obs: (n_threads, n_agents, share_obs_dim)
@@ -80,7 +82,8 @@ class RobotariumRunner(Runner):
                 """把这一步的数据存入replay buffer"""
                 self.insert(data)
 
-            # 收集完了一个episode的所有timestep data，开始计算return
+            # 收集完了一个episode_length的所有timestep data，开始计算return
+            # 如果有提前结束的episode，?
             # compute Q and V using GAE
             self.compute()
 
@@ -115,9 +118,12 @@ class RobotariumRunner(Runner):
         """
         obs, share_obs, available_actions = self.envs.reset()
 
-        # replay buffer
+        # 如果不使用centralized V，那么obs和share_obs是一样的
+        # 使用centralized V, MAPPO
+        # 不使用centralized V，IPPO
         if not self.use_centralized_V:
             share_obs = obs
+
         # 在环境reset之后，把所有并行环境下的每一个agent在t=0时的obs,share_obs,available_actions放入buffer里的self.里
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
@@ -125,17 +131,20 @@ class RobotariumRunner(Runner):
 
     @torch.no_grad()
     def collect(self, step):
-        # 把trainer网络都切换到eval模式
+        # 把policy网络都切换到eval模式
         self.trainer.prep_rollout()
 
+        # 输入当前timestep的share_obs, obs, available_actions
+        # 输出当前timestep的actions, action_log_probs, values [n_rollout_threads * num_agents, 1]
         value, action, action_log_prob, rnn_state, rnn_state_critic \
             = self.trainer.policy.get_actions(np.concatenate(self.buffer.share_obs[step]),
                                               np.concatenate(self.buffer.obs[step]),
-                                              np.concatenate(self.buffer.rnn_states[step]),
-                                              np.concatenate(self.buffer.rnn_states_critic[step]),
-                                              np.concatenate(self.buffer.masks[step]),
+                                              np.concatenate(self.buffer.rnn_states[step]),   # 没用到
+                                              np.concatenate(self.buffer.rnn_states_critic[step]),  # 没用到
+                                              np.concatenate(self.buffer.masks[step]),  # 没用到
                                               np.concatenate(self.buffer.available_actions[step]))
-        # [self.envs, agents, dim]
+
+        # (n_rollout_threads, n_agent, 1)
         values = np.array(np.split(_t2n(value), self.n_rollout_threads))
         actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
         action_log_probs = np.array(np.split(_t2n(action_log_prob), self.n_rollout_threads))

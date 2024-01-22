@@ -22,30 +22,48 @@ class Encoder(nn.Module):
     def __init__(self, state_dim, obs_dim, n_block, n_embd, n_head, n_agent, encode_state):
         super(Encoder, self).__init__()
 
+        # 无效的state_dim
         self.state_dim = state_dim
+        # 单个智能体obs_dim
         self.obs_dim = obs_dim
         self.n_embd = n_embd
         self.n_agent = n_agent
+        # 是否额外encode state
         self.encode_state = encode_state
 
+        # state_encoder和obs_encoder都是单层的MLP
         self.state_encoder = nn.Sequential(nn.LayerNorm(state_dim),
                                            init_(nn.Linear(state_dim, n_embd), activate=True), nn.GELU())
         self.obs_encoder = nn.Sequential(nn.LayerNorm(obs_dim),
                                          init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU())
 
         self.ln = nn.LayerNorm(n_embd)
+
+        # 不同的地方！！GRU in stead of self attention encoder block
         # self.blocks = nn.Sequential(*[EncodeBlock(n_embd, n_head, n_agent) for _ in range(n_block)])
         self.gru = nn.GRU(n_embd, n_embd, num_layers=2, batch_first=True)
+
+        # 最后的head是一个MLP，输出的是一个值 V
         self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
                                   init_(nn.Linear(n_embd, 1)))
 
     def forward(self, state, obs):
-        # state: (batch, n_agent, state_dim)
-        # obs: (batch, n_agent, obs_dim)
-        obs_embeddings = self.obs_encoder(obs)
-        x = obs_embeddings
+        # obs: (n_rollout_thread, n_agent, obs_dim)
+        if self.encode_state:
+            assert self.encode_state == False
+            state_embeddings = self.state_encoder(state)
+            x = state_embeddings
+        else:
+            # 所有agent共用同一个obs_encoder，这是第一个embedding
+            # 分别提取每个agent的obs feature
+            obs_embeddings = self.obs_encoder(obs)
+            # obs_embeddings: (n_rollout_thread, n_agent, n_embd)
+            x = obs_embeddings
 
+        # 在做完layer norm之后，进入GRU
+        # rep: (n_rollout_thread, n_agent, n_embd)
         rep, _ = self.gru(self.ln(x))
+        # v_loc: (n_rollout_thread, n_agent, 1)
         v_loc = self.head(rep)
 
         return v_loc, rep
@@ -99,6 +117,7 @@ class Decoder(nn.Module):
 
 
 class MultiAgentGRU(nn.Module):
+    # 和MultiAgentTransformer一模一样
     def __init__(self, state_dim, obs_dim, action_dim, n_agent,
                  n_block, n_embd, n_head, encode_state=False, device=torch.device("cpu"),
                  action_type='Discrete', dec_actor=False, share_actor=False):
@@ -113,6 +132,7 @@ class MultiAgentGRU(nn.Module):
         # state unused
         state_dim = 37
 
+        # 初始化encoder和decoder
         self.encoder = Encoder(state_dim, obs_dim, n_block, n_embd, n_head, n_agent, encode_state)
         self.decoder = Decoder(obs_dim, action_dim, n_block, n_embd, n_head, n_agent,
                                self.action_type, dec_actor=dec_actor, share_actor=share_actor)
@@ -132,6 +152,7 @@ class MultiAgentGRU(nn.Module):
         ori_shape = np.shape(state)
         state = np.zeros((*ori_shape[:-1], 37), dtype=np.float32)
 
+        # 检查type和device
         state = check(state).to(**self.tpdv)
         obs = check(obs).to(**self.tpdv)
         action = check(action).to(**self.tpdv)
@@ -140,6 +161,7 @@ class MultiAgentGRU(nn.Module):
             available_actions = check(available_actions).to(**self.tpdv)
 
         batch_size = np.shape(state)[0]
+        # 给encoder输入state和obs: [episode_length, num_agents, obs_dim]
         v_loc, obs_rep = self.encoder(state, obs)
         if self.action_type == 'Discrete':
             action = action.long()
@@ -148,22 +170,41 @@ class MultiAgentGRU(nn.Module):
         else:
             action_log, entropy = continuous_parallel_act(self.decoder, obs_rep, obs, action, batch_size,
                                                           self.n_agent, self.action_dim, self.tpdv)
-
+        # [episode_length, num_agents, 1]
         return action_log, v_loc, entropy
 
     def get_actions(self, state, obs, available_actions=None, deterministic=False):
         # state unused
+        """
+        和transformer_policy里面的get_actions对应
+        输入当前timestep的share_obs, obs, available_actions
+        输出当前timestep的actions, action_log_probs, values
+
+        state: [n_rollout_threads, num_agents, share_obs_dim]
+        obs: [n_rollout_threads, num_agents, obs_dim]
+        available_actions: [n_rollout_threads, num_agents, action_dim]
+        """
+        # 获取obs的维度
         ori_shape = np.shape(obs)
+        # 这个state没用到 [n_rollout_threads, num_agents, 37]
         state = np.zeros((*ori_shape[:-1], 37), dtype=np.float32)
 
+        # 检查type和device
         state = check(state).to(**self.tpdv)
         obs = check(obs).to(**self.tpdv)
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
+        # batch_size == n_rollout_threads 并行环境数量
         batch_size = np.shape(obs)[0]
+
+        # 给encoder输入state和obs: [n_rollout_threads, num_agents, obs_dim]
         v_loc, obs_rep = self.encoder(state, obs)
+        # 输出v_loc [n_rollout_threads, num_agents, 1] --> 相当于每个agent都有一个v_loc
+        # obs_rep [n_rollout_threads, num_agents, n_embd]
+
         if self.action_type == "Discrete":
+            # (n_rollout_threads, n_agent, 1)
             output_action, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                            self.n_agent, self.action_dim, self.tpdv,
                                                                            available_actions, deterministic)
@@ -171,7 +212,7 @@ class MultiAgentGRU(nn.Module):
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                              self.n_agent, self.action_dim, self.tpdv,
                                                                              deterministic)
-
+        # (n_rollout_threads, n_agent, 1)
         return output_action, output_action_log, v_loc
 
     def get_values(self, state, obs, available_actions=None):
@@ -181,6 +222,7 @@ class MultiAgentGRU(nn.Module):
 
         state = check(state).to(**self.tpdv)
         obs = check(obs).to(**self.tpdv)
+        # v_loc: (n_rollout_thread, n_agent, 1)
         v_tot, obs_rep = self.encoder(state, obs)
         return v_tot
 

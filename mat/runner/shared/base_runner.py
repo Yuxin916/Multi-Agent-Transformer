@@ -67,13 +67,18 @@ class Runner(object):
             if not os.path.exists(self.save_dir):
                 os.makedirs(self.save_dir)
 
-        # 如果使用不centralized V，那么obs和share_obs是一样的
+        # 如果不使用centralized V，那么obs和share_obs是一样的
+        # 使用centralized V, MAPPO
+        # 不使用centralized V，IPPO
         share_observation_space = self.envs.share_observation_space[0] if self.use_centralized_V \
             else self.envs.observation_space[0]
 
         print("obs_space: ", self.envs.observation_space)
         print("share_obs_space: ", self.envs.share_observation_space)
         print("act_space: ", self.envs.action_space)
+
+        # 检查gymma里的time_limit设置是否正确
+        assert self.envs.env_info["episode_limit"] == self.all_args.episode_length, 'episode_limit != episode_length'
 
         # 保存参数
         save_config(self.all_args, self.run_dir)
@@ -91,8 +96,11 @@ class Runner(object):
         if self.model_dir is not None:
             self.restore(self.model_dir)
 
-        # algorithm - MATTrainer - loss函数
-        self.trainer = TrainAlgo(self.all_args, self.policy, self.num_agents, device=self.device)
+        # algorithm - MATTrainer - loss函数更新
+        self.trainer = TrainAlgo(self.all_args,
+                                 self.policy,
+                                 self.num_agents,
+                                 device=self.device)
         
         # buffer - SharedReplayBuffer
         self.buffer = SharedReplayBuffer(self.all_args,
@@ -102,9 +110,10 @@ class Runner(object):
                                          self.envs.action_space[0],
                                          self.all_args.env_name)
         # 环境的logger
-        self.logger = LOGGER_REGISTRY[self.all_args.key](
-            self.all_args, self.num_agents, self.writter, self.run_dir
-        )
+        self.logger = LOGGER_REGISTRY[self.all_args.key](self.all_args,
+                                                         self.num_agents,
+                                                         self.writter,
+                                                         self.run_dir)
 
     def run(self):
         """Collect training data, perform training updates, and evaluate policy."""
@@ -134,7 +143,7 @@ class Runner(object):
         Compute critic evaluation of the last state, V（s-T）
         and then let buffer compute returns, which will be used during training.
         """
-        # 切换到eval模式
+        # 把policy网络都切换到eval模式
         self.trainer.prep_rollout()
 
         # 计算critic的最后一个state的值

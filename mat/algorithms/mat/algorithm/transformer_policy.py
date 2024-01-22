@@ -8,13 +8,15 @@ from mat.algorithms.mat.algorithm.ma_transformer import MultiAgentTransformer
 
 class TransformerPolicy:
     """
-    MAT Policy  class. Wraps actor and critic networks to compute actions and value function predictions.
+    MAT Policy class. MAT的encoder和decoder
+    计算actions和value function predictions （actor和critic）
 
-    :param args: (argparse.Namespace) arguments containing relevant model and policy information.
-    :param obs_space: (gym.Space) observation space.
+    :param args: (argparse.Namespace) arguments containing relevant model and policy information. 所有参数
+    :param obs_space: (gym.Space) observation space. 单个agent观测空间
     :param cent_obs_space: (gym.Space) value function input space (centralized input for MAPPO, decentralized for IPPO).
-    :param action_space: (gym.Space) action space.
-    :param device: (torch.device) specifies the device to run on (cpu/gpu).
+                            单个agent的共享观测空间
+    :param act_space: (gym.Space) action space. 单个agent动作空间
+    :param device: (torch.device) specifies the device to run on (cpu/gpu). 设备
     """
 
     def __init__(self, args, obs_space, cent_obs_space, act_space, num_agents, device=torch.device("cpu")):
@@ -31,7 +33,7 @@ class TransformerPolicy:
         else:
             self.action_type = 'Discrete'
 
-        # 观测空间维度和共享观测空间维度
+        # 单个agent的观测空间维度和共享观测空间维度
         self.obs_dim = get_shape_from_obs_space(obs_space)[0]
         self.share_obs_dim = get_shape_from_obs_space(cent_obs_space)[0]
 
@@ -47,7 +49,10 @@ class TransformerPolicy:
         print("share_obs_dim: ", self.share_obs_dim)
         print("act_dim: ", self.act_dim)
 
+        # agent数量
         self.num_agents = num_agents
+        print("num_agents: ", self.num_agents)
+
         self.tpdv = dict(dtype=torch.float32, device=device)
 
         # 根据算法名字选择不同的模型
@@ -62,6 +67,9 @@ class TransformerPolicy:
         else:
             raise NotImplementedError
 
+        # 初始化模型
+        # 使用config里的“add for transformer”参数以及连续/离散动作类型
+        # self.share_obs_dim没有使用
         self.transformer = MAT(self.share_obs_dim, self.obs_dim, self.act_dim, num_agents,
                                n_block=args.n_block, n_embd=args.n_embd, n_head=args.n_head,
                                encode_state=args.encode_state, device=device,
@@ -89,7 +97,8 @@ class TransformerPolicy:
 
         # 优化器
         self.optimizer = torch.optim.Adam(self.transformer.parameters(),
-                                          lr=self.lr, eps=self.opti_eps,
+                                          lr=self.lr,
+                                          eps=self.opti_eps,
                                           weight_decay=self.weight_decay)
 
     def lr_decay(self, episode, episodes):
@@ -103,6 +112,11 @@ class TransformerPolicy:
     def get_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, masks, available_actions=None,
                     deterministic=False):
         """
+        采样动作 - 进入actor network获取动作和动作的log_prob，以及critic network的value
+
+        输入当前timestep的share_obs, obs, available_actions
+        输出当前timestep的actions, action_log_probs, values
+
         Compute actions and value function predictions for the given inputs.
         :param cent_obs (np.ndarray): centralized input to the critic.
         :param obs (np.ndarray): local agent inputs to the actor.
@@ -121,6 +135,7 @@ class TransformerPolicy:
         """
 
         # reshape一下cent_obs和obs和available_actions
+
         # [n_rollout_threads, num_agents, share_obs_dim]
         cent_obs = cent_obs.reshape(-1, self.num_agents, self.share_obs_dim)
         # [n_rollout_threads, num_agents, obs_dim]
@@ -130,11 +145,13 @@ class TransformerPolicy:
             available_actions = available_actions.reshape(-1, self.num_agents, self.act_dim)
 
         # 进入MAT模型获取actions，策略概率以及每一个agent的value
+        # (n_rollout_threads, n_agent, 1)
         actions, action_log_probs, values = self.transformer.get_actions(cent_obs,
                                                                          obs,
                                                                          available_actions,
                                                                          deterministic)
-        # reshape to [n_rollout_threads * num_agents, act_dim]
+        # reshape一下actions, action_log_probs, values
+        # [n_rollout_threads * num_agents, 1]
         actions = actions.view(-1, self.act_num)
         action_log_probs = action_log_probs.view(-1, self.act_num)
         values = values.view(-1, 1)
@@ -247,5 +264,6 @@ class TransformerPolicy:
         self.transformer.train()
 
     def eval(self):
+        # 把policy网络都切换到eval模式
         self.transformer.eval()
 

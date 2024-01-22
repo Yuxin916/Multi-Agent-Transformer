@@ -34,7 +34,6 @@ def main(args):
     parser = get_config()
     # 从parse_args命令行中获取参数
     all_args = parse_args(args, parser)
-    all_args.env_name = 'robotarium'
 
     # seed
     torch.manual_seed(all_args.seed)
@@ -44,6 +43,9 @@ def main(args):
     # 创建多线程训练环境
     envs, envs_args = make_train_env_robo(all_args.n_rollout_threads, all_args.seed)
 
+    # 对参数config的一些修改
+    # 设置训练环境名
+    all_args.env_name = 'robotarium'
     # 设置episode长度
     all_args.episode_length = envs_args['time_limit']
 
@@ -51,6 +53,7 @@ def main(args):
     print("Env Name: ", all_args.env_name)
     print("Scenario: ", envs_args["key"])
 
+    # 获取环境名缩写
     def get_shortcut_name(scenario):
         # Dictionary mapping full scenario names to their shortcuts
         shortcuts = {
@@ -73,8 +76,10 @@ def main(args):
     for key, value in envs_args.items():
         setattr(all_args, key, value)
 
-    # env
+    # 智能体数量
     num_agents = envs.n_agents
+
+    # 如果是mat_dec算法，设置actor共享参数
     if all_args.algorithm_name == "mat_dec":
         # 默认在mat_dec中actor之间共享参数
         all_args.dec_actor = True

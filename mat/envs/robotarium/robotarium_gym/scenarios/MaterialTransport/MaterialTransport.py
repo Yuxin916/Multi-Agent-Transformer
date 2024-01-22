@@ -5,6 +5,7 @@ from robotarium_gym.scenarios.base import BaseEnv
 from robotarium_gym.utilities.misc import *
 from robotarium_gym.scenarios.MaterialTransport.visualize import Visualize
 from robotarium_gym.utilities.roboEnv import roboEnv
+from robotarium_gym.scenarios.check_dim import *
 
 
 class Agent:
@@ -58,7 +59,8 @@ class MaterialTransport(BaseEnv):
             self.agent_obs_dim = 11
         else:
             self.agent_obs_dim = 9
-
+        state_dim = self.agent_obs_dim * self.num_robots
+        
         self.zone1_args = copy.deepcopy(self.args.zone1)
         del self.zone1_args['distribution']   
         self.zone2_args = copy.deepcopy(self.args.zone2)
@@ -80,14 +82,19 @@ class MaterialTransport(BaseEnv):
         #Initializes the action and observation spaces
         actions = []
         observations = []
+        states = []
+
         for a in self.agents:
             actions.append(spaces.Discrete(20))
             #each agent's observation is a tuple of size 3
             #the minimum observation is the left corner of the robotarium, the maximum is the righ corner
             observations.append(spaces.Box(low=-1.5, high=1.5, shape=(self.agent_obs_dim,), dtype=np.float32))
+            states.append(spaces.Box(low=-1.5, high=3, shape=(state_dim,), dtype=np.float32))
+
         self.action_space = spaces.Tuple(tuple(actions))
         self.observation_space = spaces.Tuple(tuple(observations))
-        
+        self.state_space = spaces.Tuple(tuple(states))
+
         self.visualizer = Visualize(self.args) #needed for Robotarium renderings
         #Env impliments the robotarium backend
         #It expects to have access to agent_poses, visualizer, num_robots and _generate_step_goal_positions
@@ -96,6 +103,7 @@ class MaterialTransport(BaseEnv):
 
     def reset(self):
         self.episode_steps = 0
+        self.episode_return = 0
         self.messages = [0,0,0,0] 
 
         #Randomly sets the load for each zone
@@ -114,6 +122,9 @@ class MaterialTransport(BaseEnv):
         return [[0]*self.agent_obs_dim] * self.num_robots
     
     def step(self, actions_):
+        terminated = False
+        if self.episode_steps == 0:
+            assert self.episode_return == 0, "Episode return is not 0 at the start of the episode"
         self.episode_steps += 1
 
         #Robotarium actions and updating agent_poses all happen here
@@ -123,7 +134,7 @@ class MaterialTransport(BaseEnv):
 
         obs = self.get_observations()
         if return_message == '':
-            reward = self.get_reward()       
+            reward = float(self.get_reward())
             terminated = self.episode_steps > self.args.max_episode_steps #For this environment, episode only ends after timing out
             #Terminates when all agent loads are 0 and the goal zone loads are 0
             if not terminated:
@@ -135,13 +146,26 @@ class MaterialTransport(BaseEnv):
                             break
         else:
             #print("Ending due to", return_message)
-            reward = -6
+            reward = float(-6)
             terminated = True
-        
+
+        # 累计episodic reward
+        self.episode_return += reward
+
+        info = {'terminated': terminated, 'rewards': reward}
+
         if terminated:
-            print(f'Remaining: {self.zone1_load + self.zone2_load + sum(a.load for a in self.agents)} {return_message}')        
- 
-        return obs, [reward] * self.num_robots, [terminated]*self.num_robots, {}
+            info["episode_return"] = self.episode_return
+            info["episode_steps"] = self.episode_steps
+
+            # print(f'Remaining: {self.zone1_load + self.zone2_load + sum(a.load for a in self.agents)} {return_message}')
+
+        assert check_obs_dimensions(obs, self.num_robots, self.observation_space[0].shape[0]), 'obs dim wrong'
+        assert check_reward_dimensions([reward] * self.num_robots, self.num_robots), 'reward dim wrong'
+        assert check_terminated_dimensions([terminated] * self.num_robots, self.num_robots), 'done dim wrong'
+        assert check_info_dimensions([info] * self.num_robots, self.num_robots), 'info dim wrong'
+
+        return obs, [reward] * self.num_robots, [terminated]*self.num_robots, [info] * self.num_robots
     
     def get_observations(self):
         observations = [] #Each agent's individual observation

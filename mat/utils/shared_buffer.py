@@ -22,14 +22,15 @@ def _shuffle_agent_grid(x, y):
 class SharedReplayBuffer(object):
     """
     Buffer to store training data.
-    :param args: (argparse.Namespace) arguments containing relevant model, policy, and env information.
-    :param num_agents: (int) number of agents in the env.
-    :param obs_space: (gym.Space) observation space of agents.
-    :param cent_obs_space: (gym.Space) centralized observation space of agents.
-    :param act_space: (gym.Space) action space for agents.
+    :param args: (argparse.Namespace) arguments containing relevant model, policy, and env information. 所有参数
+    :param num_agents: (int) number of agents in the env. 环境中的agent数量
+    :param obs_space: (gym.Space) observation space of agents. 单个agent观测空间
+    :param cent_obs_space: (gym.Space) centralized observation space of agents. 单个agent的共享观测空间
+    :param act_space: (gym.Space) action space for agents. 单个agent的动作空间
     """
 
     def __init__(self, args, num_agents, obs_space, cent_obs_space, act_space, env_name):
+        # args
         self.episode_length = args.episode_length
         self.n_rollout_threads = args.n_rollout_threads
         self.hidden_size = args.hidden_size
@@ -44,6 +45,7 @@ class SharedReplayBuffer(object):
         self.num_agents = num_agents
         self.env_name = env_name
 
+        # 单个agent的观测空间维度和共享观测空间维度
         obs_shape = get_shape_from_obs_space(obs_space)
         share_obs_shape = get_shape_from_obs_space(cent_obs_space)
 
@@ -54,8 +56,7 @@ class SharedReplayBuffer(object):
             share_obs_shape = share_obs_shape[:1]
 
         """
-        Buffer里储存了：ALL (np.ndarray)
-        相当于把agent都存到一起了
+        Buffer里储存了：ALL (np.ndarray) 相当于把agent都存到一起了
         1. self.share_obs: 全局状态 [episode_length + 1, 进程数量, agent数量, 全局状态维度]
         2. self.obs: 局部状态 [episode_length + 1, 进程数量, agent数量, 局部状态维度]
         3. self.rnn_states: actor网络的RNN状态 [episode_length + 1, 进程数量, agent数量, recurrent_N, hidden_size]
@@ -76,16 +77,16 @@ class SharedReplayBuffer(object):
                                   dtype=np.float32)
         self.obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, *obs_shape), dtype=np.float32)
 
-        self.rnn_states = np.zeros(
-            (self.episode_length + 1, self.n_rollout_threads, num_agents, self.recurrent_N, self.hidden_size),
-            dtype=np.float32)
+        self.rnn_states = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, self.recurrent_N,
+                                    self.hidden_size), dtype=np.float32)
+
         self.rnn_states_critic = np.zeros_like(self.rnn_states)
 
-        self.value_preds = np.zeros(
-            (self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+        self.value_preds = np.zeros((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+
         self.returns = np.zeros_like(self.value_preds)
-        self.advantages = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+
+        self.advantages = np.zeros((self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
 
         if act_space.__class__.__name__ == 'Discrete':
             self.available_actions = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, act_space.n),
@@ -95,12 +96,13 @@ class SharedReplayBuffer(object):
 
         act_shape = get_shape_from_act_space(act_space)
 
-        self.actions = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
-        self.action_log_probs = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
-        self.rewards = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+        self.actions = np.zeros((self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
+
+        self.action_log_probs = np.zeros((self.episode_length, self.n_rollout_threads, num_agents, act_shape),
+                                         dtype=np.float32)
+
+        self.rewards = np.zeros((self.episode_length, self.n_rollout_threads, num_agents, 1),
+                                dtype=np.float32)
 
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)

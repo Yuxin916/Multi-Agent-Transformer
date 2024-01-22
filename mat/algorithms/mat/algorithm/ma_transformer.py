@@ -89,7 +89,7 @@ class EncodeBlock(nn.Module):
 
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
-        # self.attn = SelfAttention(n_embd, n_head, n_agent, masked=True)
+        # mask关掉了，说明所有的agent都可以看到所有的agent的obs
         self.attn = SelfAttention(n_embd, n_head, n_agent, masked=False)
         self.mlp = nn.Sequential(
             init_(nn.Linear(n_embd, 1 * n_embd), activate=True),
@@ -98,6 +98,7 @@ class EncodeBlock(nn.Module):
         )
 
     def forward(self, x):
+        # x [n_rollout_thread, n_agents, n_embd]
         x = self.ln1(x + self.attn(x, x, x))
         x = self.ln2(x + self.mlp(x))
         return x
@@ -112,7 +113,7 @@ class DecodeBlock(nn.Module):
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
         self.ln3 = nn.LayerNorm(n_embd)
-        # decoder的2个attention都是masked的
+        # decoder的2个attention都是masked的，说明所有的agent只能看到之前的agent的action
         self.attn1 = SelfAttention(n_embd, n_head, n_agent, masked=True)
         self.attn2 = SelfAttention(n_embd, n_head, n_agent, masked=True)
         self.mlp = nn.Sequential(
@@ -126,9 +127,9 @@ class DecodeBlock(nn.Module):
         x: shifted action_embeddings -> (B, n_agent, n_embd)
         rep_enc: encoded representation of all observations -> (B, n_agent, n_embd)
         """
-        # decoder里面的第一个attention是对自身的 -> masked=True
+        # decoder里面的第一个attention是对action_embeddings的 -> masked=True
         x = self.ln1(x + self.attn1(x, x, x))
-        # decoder里面的第二个attention是对encoder的输出的
+        # decoder里面的第二个attention是对encoder的输出的 -> masked=True
         x = self.ln2(rep_enc + self.attn2(key=x, value=x, query=rep_enc))
         x = self.ln3(x + self.mlp(x))
         return x
@@ -139,42 +140,50 @@ class Encoder(nn.Module):
     def __init__(self, state_dim, obs_dim, n_block, n_embd, n_head, n_agent, encode_state):
         super(Encoder, self).__init__()
 
+        # 无效的state_dim
         self.state_dim = state_dim
+        # 单个智能体obs_dim
         self.obs_dim = obs_dim
         self.n_embd = n_embd
         self.n_agent = n_agent
+        # 是否额外encode state
         self.encode_state = encode_state
         # self.agent_id_emb = nn.Parameter(torch.zeros(1, n_agent, n_embd))
 
+        # state_encoder和obs_encoder都是单层的MLP
         self.state_encoder = nn.Sequential(nn.LayerNorm(state_dim),
                                            init_(nn.Linear(state_dim, n_embd), activate=True), nn.GELU())
         self.obs_encoder = nn.Sequential(nn.LayerNorm(obs_dim),
                                          init_(nn.Linear(obs_dim, n_embd), activate=True), nn.GELU())
 
         self.ln = nn.LayerNorm(n_embd)
+
         # n_block代表EncodeBlock的数量
         self.blocks = nn.Sequential(*[EncodeBlock(n_embd, n_head, n_agent) for _ in range(n_block)])
+
+        # 最后的head是一个MLP，输出的是一个值 V
         self.head = nn.Sequential(init_(nn.Linear(n_embd, n_embd), activate=True), nn.GELU(), nn.LayerNorm(n_embd),
                                   init_(nn.Linear(n_embd, 1)))
 
     def forward(self, state, obs):
-        # state: (n_rollout_thread, n_agent, state_dim)
         # obs: (n_rollout_thread, n_agent, obs_dim)
         if self.encode_state:
-            # assert self.encode_state == False
+            assert self.encode_state == False
             state_embeddings = self.state_encoder(state)
             x = state_embeddings
         else:
             # 所有agent共用同一个obs_encoder，这是第一个embedding
+            # 分别提取每个agent的obs feature
             obs_embeddings = self.obs_encoder(obs)
+            # obs_embeddings: (n_rollout_thread, n_agent, n_embd)
             x = obs_embeddings
 
         # 在做完layer norm之后，进入multi-head attention, 每一个都是EncodeBlock
-        # x: (n_rollout_thread, n_agent, n_embd)
-        rep = self.blocks(self.ln(x))
         # rep: (n_rollout_thread, n_agent, n_embd)
-        v_loc = self.head(rep)
+        rep = self.blocks(self.ln(x))
+
         # v_loc: (n_rollout_thread, n_agent, 1)
+        v_loc = self.head(rep)
 
         return v_loc, rep
 
@@ -216,6 +225,7 @@ class Decoder(nn.Module):
         else:
             # self.agent_id_emb = nn.Parameter(torch.zeros(1, n_agent, n_embd))
             if action_type == 'Discrete':
+                # 多一个维度的action arbitrary starting signal
                 self.action_encoder = nn.Sequential(init_(nn.Linear(action_dim + 1, n_embd, bias=False), activate=True),
                                                     nn.GELU())
             else:
@@ -234,9 +244,13 @@ class Decoder(nn.Module):
 
     # state, action, and return
     def forward(self, action, obs_rep, obs):
-        # shifted action: (batch, n_agent, action_dim+1), one-hot/logits?
-        # obs_rep: (batch, n_agent, n_embd)
-        # obs: (batch, n_agent, obs_dim)
+        """
+        Call from get_actions - discrete_autoregreesive_act - forward
+        输入
+        shifted action: (batch, n_agent, action_dim+1),所有batch(环境）的第一个agent的第一个动作是1，其余动作都是0
+        obs_rep: (batch, n_agent, n_embd)
+        obs: (batch, n_agent, obs_dim)
+        """
 
         if self.dec_actor:
             # 当mat_dec的时候，action和obs_rep都没有用到
@@ -253,11 +267,12 @@ class Decoder(nn.Module):
                 logit = torch.stack(logit, dim=1)
         else:
             # 只用到了obs_rep和shifted_action
-            # 给多一个dimeaction做embedding （所有的) -> batch, n_agent, n_embd
+            # 给多一个dimension的action做embedding （所有的) batch, n_agent，action_dim+1 -> batch, n_agent, n_embd
             action_embeddings = self.action_encoder(action)
             # layer norm -> batch, n_agent, n_embd
             x = self.ln(action_embeddings)
             for block in self.blocks:
+                # decoder block的输入是action_embeddings和obs_rep
                 x = block(x, obs_rep)
             # x: (batch, n_agent, n_embd)
             logit = self.head(x)
@@ -280,6 +295,7 @@ class MultiAgentTransformer(nn.Module):
 
         # state unused
         state_dim = 37
+        state_dim = state_dim
 
         # 初始化encoder和decoder
         self.encoder = Encoder(state_dim, obs_dim, n_block, n_embd, n_head, n_agent, encode_state)
@@ -292,10 +308,13 @@ class MultiAgentTransformer(nn.Module):
             self.decoder.zero_std(self.device)
 
     def forward(self, state, obs, action, available_actions=None):
-        # state: (batch, n_agent, state_dim)
-        # obs: (batch, n_agent, obs_dim)
-        # action: (batch, n_agent, 1)
-        # available_actions: (batch, n_agent, act_dim)
+        """
+
+        state: (batch, n_agent, state_dim)
+        obs: (batch, n_agent, obs_dim)
+        action: (batch, n_agent, 1)
+        available_actions: (batch, n_agent, act_dim)
+        """
 
         # state unused
         ori_shape = np.shape(state)
@@ -325,8 +344,15 @@ class MultiAgentTransformer(nn.Module):
     def get_actions(self, state, obs, available_actions=None, deterministic=False):
         # state unused
         """
+        和transformer_policy里面的get_actions对应
+        输入当前timestep的share_obs, obs, available_actions
+        输出当前timestep的actions, action_log_probs, values
+
+        state: [n_rollout_threads, num_agents, share_obs_dim]
         obs: [n_rollout_threads, num_agents, obs_dim]
+        available_actions: [n_rollout_threads, num_agents, action_dim]
         """
+        # 获取obs的维度
         ori_shape = np.shape(obs)
         # 这个state没用到 [n_rollout_threads, num_agents, 37]
         state = np.zeros((*ori_shape[:-1], 37), dtype=np.float32)
@@ -337,7 +363,7 @@ class MultiAgentTransformer(nn.Module):
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
-        # batch_size = n_rollout_threads
+        # batch_size == n_rollout_threads 并行环境数量
         batch_size = np.shape(obs)[0]
 
         # 给encoder输入state和obs: [n_rollout_threads, num_agents, obs_dim]
@@ -347,9 +373,16 @@ class MultiAgentTransformer(nn.Module):
 
         if self.action_type == "Discrete":
             # (n_rollout_threads, n_agent, 1)
-            output_action, output_action_log = discrete_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
-                                                                           self.n_agent, self.action_dim, self.tpdv,
-                                                                           available_actions, deterministic)
+            output_action, output_action_log = discrete_autoregreesive_act(self.decoder,
+                                                                           obs_rep,
+                                                                           obs,
+                                                                           batch_size,  # n_rollout_threads
+                                                                           self.n_agent,
+                                                                           self.action_dim,
+                                                                           self.tpdv,
+                                                                           available_actions,
+                                                                           deterministic
+                                                                           )
         else:
             output_action, output_action_log = continuous_autoregreesive_act(self.decoder, obs_rep, obs, batch_size,
                                                                              self.n_agent, self.action_dim, self.tpdv,

@@ -9,6 +9,7 @@ from robotarium_gym.utilities.misc import *
 from robotarium_gym.scenarios.ArcticTransport.visualize import Visualize
 from robotarium_gym.utilities.roboEnv import roboEnv
 from robotarium_gym.scenarios.ArcticTransport.agent import Agent
+from robotarium_gym.scenarios.check_dim import *
 
 class ArcticTransport(BaseEnv):
     def __init__(self, args):
@@ -39,15 +40,20 @@ class ArcticTransport(BaseEnv):
         #Initializes the action and observation spaces
         actions = []
         observations = []
+        states = []
+
         for i in range(len(self.agents)):
             actions.append(spaces.Discrete(self.agent_action_dim))
             #each agent's observation is a tuple of size 3
             obs_dim = self.agent_obs_dim
+            state_dim = obs_dim * self.num_robots
             #the minimum observation is the left corner of the robotarium
             #the maximum is the message and the pixel type which can both go up to 3
             observations.append(spaces.Box(low=-1.5, high=3, shape=(obs_dim,), dtype=np.float32))
+            states.append(spaces.Box(low=-1.5, high=3, shape=(state_dim,), dtype=np.float32))
         self.action_space = spaces.Tuple(tuple(actions))
         self.observation_space = spaces.Tuple(tuple(observations))
+        self.state_space = spaces.Tuple(tuple(states))
         
         self.visualizer = Visualize(self.args) #needed for Robotarium renderings
         #Env impliments the robotarium backend
@@ -57,6 +63,8 @@ class ArcticTransport(BaseEnv):
 
     def reset(self):
         self.episode_steps = 0
+        self.episode_return = 0
+
         for a in self.agents:
             a.pixel_type=0
             a.reached_goal = False
@@ -84,6 +92,9 @@ class ArcticTransport(BaseEnv):
         return [[0] * self.agent_obs_dim] * self.num_robots
 
     def step(self, actions_):
+        terminated = False
+        if self.episode_steps == 0:
+            assert self.episode_return == 0, "Episode return is not 0 at the start of the episode"
         self.episode_steps += 1
 
         #Robotarium actions and updating agent_poses all happen here
@@ -91,7 +102,7 @@ class ArcticTransport(BaseEnv):
 
         obs = self.get_observations()
         if message == '':
-            reward = self.get_reward()       
+            reward = float(self.get_reward())
             terminated = self.episode_steps > self.args.max_episode_steps
             if not terminated:
                 terminated = True
@@ -101,16 +112,31 @@ class ArcticTransport(BaseEnv):
                         break
         else:
             #print("Ending due to", message)
-            reward = -30
+            reward = float(-30)
             terminated = True
 
+        # 累计episodic reward
+        self.episode_return += reward
+
+        info = {'terminated': terminated, 'rewards': reward}
+
         if terminated:
+            info["episode_return"] = self.episode_return
+            info["episode_steps"] = self.episode_steps
+
             if message == '':
-                print(self.episode_steps)
+                # print(self.episode_steps)
+                pass
             else:
-                print((self.args.max_episode_steps+1), message)
-        
-        return obs, [reward]*self.num_robots, [terminated]*self.num_robots, {}
+                # print((self.args.max_episode_steps+1), message)
+                pass
+
+        assert check_obs_dimensions(obs, self.num_robots, self.observation_space[0].shape[0]), 'obs dim wrong'
+        assert check_reward_dimensions([reward] * self.num_robots, self.num_robots), 'reward dim wrong'
+        assert check_terminated_dimensions([terminated] * self.num_robots, self.num_robots), 'done dim wrong'
+        assert check_info_dimensions([info] * self.num_robots, self.num_robots), 'info dim wrong'
+
+        return obs, [reward]*self.num_robots, [terminated]*self.num_robots, [info] * self.num_robots
 
     def get_observations(self):
         observations = []

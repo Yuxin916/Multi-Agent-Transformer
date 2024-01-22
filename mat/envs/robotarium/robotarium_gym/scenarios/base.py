@@ -32,6 +32,9 @@ class BaseEnv(object):
         #Must return goal locations for each agent
         raise NotImplementedError()
 
+    def get_state_space(self):
+        return self.state_space
+
 class BaseVisualization():
     #How the robotarium's background gets reset at the beginning of each episode
     def initialize_markers(self, robotarium, agents):
