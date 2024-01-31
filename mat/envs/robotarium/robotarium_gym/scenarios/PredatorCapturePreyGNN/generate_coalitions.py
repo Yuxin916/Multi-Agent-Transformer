@@ -16,10 +16,14 @@ def generate_coalitions_from_agents(agents, config):
     # TRAINING COALITIONS
     coalitions["train"] = {"coalitions":{}}
     coalitions["test"] = {"coalitions":{}}
+
+    # 读取生成的agents
     capture_agents = agents["capture"]
     predator_agents = agents["predator"]
-    num_robots_list = [2, 3, 4, 5, 6] # We are unlikely to use coalitions larger than 6
+
+    num_robots_list = [2, 3, 4, 5, 6]  # We are unlikely to use coalitions larger than 6
     num_coalitions = config["n_coalitions"]
+
     for t in ["train", "test"]:
         for num_agents in num_robots_list:
             num_agents_str = str(num_agents) + "_agents"
@@ -75,6 +79,7 @@ def generate_coalitions_from_agents(agents, config):
 
             
 def main():
+    # 读取这个环境的配置文件
     with open('config.yaml', 'r') as stream:
         config = yaml.safe_load(stream)
 
@@ -84,28 +89,34 @@ def main():
     agents['test_predator'] = {}
     agents['test_capture'] = {}
     num_candidates = config['n_capture_agents'] + config['n_test_capture_agents'] + config['n_predator_agents'] + config['n_test_predator_agents']
+    # 最少需要多少位二进制数来表示这么多个robots - 产生id
     idx_size = int(np.ceil(np.log2(num_candidates)))
 
     candidate = 0
 
+    # capture robot - train 的radius生成的分布
     func_args = copy.deepcopy(config['traits']['capture'])
     del func_args['distribution']    
     for i in range(config['n_capture_agents']):
         agents['capture'][i] = {}
+        # 产生一个二进制的id - 相同长度
         agents['capture'][i]['id'] = format(candidate, '#0'+str(idx_size + 2)+'b').replace('0b', '')
-        val = getattr(np.random, config['traits']['capture']['distribution'])(**func_args)
-        agents['capture'][i]['capture_radius'] = float(val)
+        # 产生半径
+        agents['capture'][i]['capture_radius'] = float(getattr(np.random, config['traits']['capture']['distribution'])(**func_args))
         candidate += 1
 
+    # predator robot - train 的radius生成的分布
     func_args = copy.deepcopy(config['traits']['predator'])
     del func_args['distribution']    
     for i in range(config['n_predator_agents']):
         agents['predator'][i] = {}
+        # 产生一个二进制的id - 相同长度
         agents['predator'][i]['id'] = format(candidate, '#0'+str(idx_size + 2)+'b').replace('0b', '')
-        val = getattr(np.random, config['traits']['predator']['distribution'])(**func_args)
-        agents['predator'][i]['sensing_radius'] = float(val)
+        # 产生半径
+        agents['predator'][i]['sensing_radius'] = float(getattr(np.random, config['traits']['predator']['distribution'])(**func_args))
         candidate += 1
 
+    # capture robot - test 的radius生成的分布
     func_args = copy.deepcopy(config['traits']['capture'])
     del func_args['distribution']
     for i in range(config['n_test_capture_agents']):
@@ -115,6 +126,7 @@ def main():
         agents['test_capture'][i]['capture_radius'] = float(val)
         candidate += 1
 
+    # predator robot - test 的radius生成的分布
     func_args = copy.deepcopy(config['traits']['predator'])
     del func_args['distribution']
     for i in range(config['n_test_predator_agents']):
@@ -124,8 +136,12 @@ def main():
         agents['test_predator'][i]['sensing_radius'] = float(val)
         candidate += 1
 
-    
-
+    """
+    agent是4个Dict，每个Dict里面有25个agent的Dict，每个agent的Dict有id和radius -- predefined_coalition_agents
+    coalitions是有train和test两个Dict，每个coalition里面都有N agent个Dict，每个agent的Dict有n_coalitions个Dict，分别保存predetor和capture的id和radius 
+                                --predefined_coalition_agents
+    """
+    # 生成coalition
     coalitions = generate_coalitions_from_agents(agents, config)
     out = input("Would you like to save these as the new predefined coalitions?[y/N]\n")
     if(out == "y"):
