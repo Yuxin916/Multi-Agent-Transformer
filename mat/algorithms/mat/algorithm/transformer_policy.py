@@ -64,6 +64,8 @@ class TransformerPolicy:
             from mat.algorithms.mat.algorithm.mat_decoder import MultiAgentDecoder as MAT
         elif self.algorithm_name == "mat_encoder":
             from mat.algorithms.mat.algorithm.mat_encoder import MultiAgentEncoder as MAT
+        elif self.algorithm_name == "mat_gat":
+            from mat.algorithms.mat.algorithm.mat_gat import MultiAgentTransformer_GAT as MAT
         else:
             raise NotImplementedError
 

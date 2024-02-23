@@ -16,14 +16,20 @@ def clean_empty_model_dirs(root_dir):
             models_path = os.path.join(subdir, 'models')
             # Check if the 'models' directory exists
             if os.path.exists(models_path):
-                # Get all .pt files in the models directory
-                pt_files = [f for f in os.listdir(models_path) if f.endswith('.pt')]
-                # Check if the 'models' directory is empty or has only one .pt file
-                if not pt_files or len(pt_files) <= 1:
-                    # If the 'models' directory is empty or has only one .pt file,
-                    # delete the 'runX' directory
-                    shutil.rmtree(subdir)  # Using shutil.rmtree to delete non-empty dirs
-                    print(f"Deleted {subdir} because 'models' is empty or has less than one .pt file")
+                # check if the 'models' directory is empty
+                if not os.listdir(models_path):
+                    # If the 'models' directory is empty, delete the 'runX' directory
+                    shutil.rmtree(subdir)
+                    print(f"Deleted {subdir} because 'models' is empty")
+                else:
+                    # Get all .pt files in the models directory
+                    pt_files = [f for f in os.listdir(models_path) if f.endswith('.pt')]
+                    # Check if the 'models' directory is empty or has only one .pt file
+                    if not pt_files or len(pt_files) <= 1:
+                        # If the 'models' directory is empty or has only one .pt file,
+                        # delete the 'runX' directory
+                        shutil.rmtree(subdir)  # Using shutil.rmtree to delete non-empty dirs
+                        print(f"Deleted {subdir} because 'models' has less than one .pt file")
             else:
                 shutil.rmtree(subdir)  # Using shutil.rmtree to delete empty dirs
                 print(f"Deleted {subdir} because 'models' is empty or has less than one .pt file")
@@ -33,6 +39,6 @@ def clean_empty_model_dirs(root_dir):
 # root_directory = './StarCraft2_multi/mat/'  # Replace with your actual root directory
 # root_directory = './StarCraft2/1c3s5z/mat/check'  # Replace with your actual root directory
 # root_directory = './StarCraft2/mat/check'  # Replace with your actual root directory
-root_directory = './robo_HSN/mat/check'  # Replace with your actual root directory
+root_directory = './robotarium/AT/mat/check'  # Replace with your actual root directory
 
 clean_empty_model_dirs(root_directory)

@@ -12,6 +12,7 @@ from mat.envs.robotarium.robotarium_gym.scenarios.PredatorCapturePrey.pcp_logger
 # from mat.envs.robotarium.robotarium_gym.scenarios.Warehouse.wh_logger import WHLogger
 from mat.envs.robotarium.robotarium_gym.scenarios.ArcticTransport.at_logger import ATLogger
 from mat.envs.robotarium.robotarium_gym.scenarios.MaterialTransport.mt_logger import MTLogger
+from mat.envs.robotarium.robotarium_gym.scenarios.PredatorCapturePreyGNN.pcpgnn_logger import PCPGNNLogger
 
 
 # this function builds a class env (type MultiAgentEnv) with keyworld argument **kwargs.
@@ -23,7 +24,7 @@ def env_fn(env, **kwargs) -> MultiAgentEnv:
 LOGGER_REGISTRY = {
     "robotarium_gym:HeterogeneousSensorNetwork-v0": HSNLogger,
     "robotarium_gym:PredatorCapturePrey-v0": PCPLogger,
-    # "robotarium_gym:PredatorCapturePreyGNN-v0"
+    "robotarium_gym:PredatorCapturePreyGNN-v0": PCPGNNLogger,
     # "robotarium_gym:Warehouse-v0": WHLogger,
     # "robotarium_gym:Simple-v0"
     "robotarium_gym:ArcticTransport-v0": ATLogger,

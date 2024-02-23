@@ -13,58 +13,90 @@ from robotarium_gym.scenarios.check_dim import *
 
 class PredatorCapturePrey(BaseEnv):
     def __init__(self, args):
-        # Settings
+        # 环境相关的args - /mat/envs/robotarium/robotarium_gym/scenarios/HeterogeneousSensorNetwork/config.yaml
         self.args = args
 
-        self.num_robots = args.predator + args.capture
-        self.agent_poses = None  # robotarium convention poses
-        self.prey_loc = None
+        # 当前scenario的文件夹
+        module_dir = os.path.dirname(__file__)
+        # with open(f'{module_dir}/predefined_agents.yaml', 'r') as stream:
+        #     self.predefined_agents = yaml.safe_load(stream)
 
+        # 是否使用随机种子[-1不随机][任意其他数字 随机]
+        if self.args.seed != -1:
+            np.random.seed(self.args.seed)
+
+        # n个agent
+        self.num_robots = args.predator + args.capture
         self.num_prey = args.num_prey
         self.num_predators = args.predator
         self.num_capture = args.capture
 
-        if self.args.seed != -1:
-            np.random.seed(self.args.seed)
-
+        # declare
+        self.agent_poses = None  # robotarium convention poses
+        self.prey_loc = None
+        self.episode_number = 0
         self.action_id2w = {0: 'left', 1: 'right', 2: 'up', 3: 'down', 4: 'no_action'}
         self.action_w2id = {v: k for k, v in self.action_id2w.items()}
 
-        if self.args.capability_aware:
-            self.agent_obs_dim = 6
-        else:
-            self.agent_obs_dim = 4
-
-        # Initializes the agents
+        # 初始化所有agent
         self.agents = []
-        # Initialize predator agents
+        # 初始化 predator agents
         for i in range(self.num_predators):
             self.agents.append(
-                Agent(i, args.predator_radius, 0, self.action_id2w, self.action_w2id, self.args.capability_aware))
-        # Initialize capture agents
+                Agent(i, args.predator_radius, 0, self.action_id2w, self.action_w2id,
+                      self.args.capability_aware))
+        # 初始化 capture agents
         for i in range(self.num_capture):
-            self.agents.append(Agent(i + self.args.predator, 0, args.capture_radius, self.action_id2w, self.action_w2id,
-                                     self.args.capability_aware))
+            self.agents.append(
+                Agent(i + self.args.predator, 0, args.capture_radius, self.action_id2w, self.action_w2id,
+                      self.args.capability_aware))
 
-        # initializes the actions and observation spaces
+        # 单个agent的观测空间dim
+        if self.args.capability_aware:
+            # [agent_x_pos, agent_y_pos, sensed_prey_x_pose , sensed_prey_y_pose, sensing_radius, capture_radius]
+            # Returns the closest prey if multiple agents in range
+            self.agent_obs_dim = 6
+        # elif self.args.agent_id:  # agent ids are one hot encoded
+        #     pass
+            # TODO
+        else:
+            # [agent_x_pos, agent_y_pos, sensed_prey_x_pose , sensed_prey_y_pose]
+            # Returns the closest prey if multiple agents in range
+            self.agent_obs_dim = 4
+
+        # 单个agent的state空间dim = 单个agent的观测空间dim * agent的数量 (假设全局观测 | 所有agent的观测都是一样dim的
+        self.agent_state_dim = self.agent_obs_dim * self.args.n_agents
+
+        # 状态空间和动作空间
         actions = []
         observations = []
         states = []
 
+        # 对于每个agent
         for agent in self.agents:
+            # 动作空间
             actions.append(spaces.Discrete(5))
-            # Each agent's observation is a tuple of size self.agent_obs_dim
+            # 每个agent的状态空间是自己的观测空间 + 能收到通信的邻居数量的的观测空间
             obs_dim = self.agent_obs_dim * (self.args.num_neighbors + 1)
+            # 每个agent的共享状态空间
             state_dim = obs_dim * self.num_robots
-            # The lowest any observation will be is -5 (prey loc when can't see one), the highest is 3 (largest reasonable radius an agent will have)
+
+            # The lowest any observation will be is -5 (prey loc when can't see one),
+            # the highest is 3 (largest reasonable radius an agent will have)
             observations.append(spaces.Box(low=-5, high=3, shape=(obs_dim,), dtype=np.float32))
             states.append(spaces.Box(low=-5, high=3, shape=(state_dim,), dtype=np.float32))
+
         self.action_space = spaces.Tuple(tuple(actions))
         self.observation_space = spaces.Tuple(tuple(observations))
         self.state_space = spaces.Tuple(tuple(states))
 
+        # 初始化可视化
         self.visualizer = Visualize(self.args)
+
+        # 初始化环境，基于roboEnv
         self.env = roboEnv(self, args)
+
+        # 初始化通信网络 - 衡量哪些智能体是需要进行interaction
         self.adj_matrix = 1 - np.identity(self.num_robots, dtype=int)
 
     def _generate_step_goal_positions(self, actions):
@@ -125,22 +157,27 @@ class PredatorCapturePrey(BaseEnv):
         '''
         Resets the simulation
         '''
+        # episode数量+1
+        self.episode_number += 1
         self.episode_steps = 0
         self.episode_return = 0
+
         self.prey_locs = []
         self.num_prey = self.args.num_prey
 
-        # Agent locations
+        # 场地长宽
         width = self.args.ROBOT_INIT_RIGHT_THRESH - self.args.LEFT
         height = self.args.DOWN - self.args.UP
+        # 根据robot数量，初始最小距离和场地长宽 生成agents的初始位置 --》3xN numpy array (of poses) [x,y,theta]
         self.agent_poses = generate_initial_locations(self.num_robots, width, height, self.args.ROBOT_INIT_RIGHT_THRESH,
                                                       start_dist=self.args.start_dist)
 
-        # Prey locations and tracking
+        # 根据robot数量，初始最小距离和场地长宽 生成preys的初始位置 --》3xN numpy array (of poses) [x,y,theta]
         width = self.args.RIGHT - self.args.PREY_INIT_LEFT_THRESH
         self.prey_loc = generate_initial_locations(self.num_prey, width, height, self.args.ROBOT_INIT_RIGHT_THRESH,
                                                    start_dist=self.args.step_dist, spawn_left=False)
         self.prey_loc = self.prey_loc[:2].T
+
         self.prey_captured = [False] * self.num_prey
         self.prey_sensed = [False] * self.num_prey
 
@@ -149,9 +186,9 @@ class PredatorCapturePrey(BaseEnv):
         return [[0] * (self.agent_obs_dim * (self.args.num_neighbors + 1))] * self.num_robots
 
     def step(self, actions_):
-        '''
+        '''-+
         Step into the environment
-        Returns observation, reward, done, info (empty dictionary for now)
+        Returns observation, reward, done, info
         '''
         terminated = False
         if self.episode_steps == 0:
@@ -161,11 +198,14 @@ class PredatorCapturePrey(BaseEnv):
         # call the environment step function and get the updated state
         return_message = self.env.step(actions_)
 
+        # 更新这一个step的prey的位置和状态
         self._update_tracking_and_locations(actions_)
+
         updated_state = self._generate_state_space()
 
         # get the observation and reward from the updated state
         obs = self.get_observations(updated_state)
+
         if return_message != '':
             # print("Ending due to",return_message)
             terminated = True
@@ -174,17 +214,15 @@ class PredatorCapturePrey(BaseEnv):
             rewards = self.get_rewards(updated_state)
 
             # condition for checking for the whether the episode is terminated
-            if self.episode_steps > self.args.max_episode_steps or \
+            if self.episode_steps >= self.args.max_episode_steps or \
                     updated_state['num_prey'] == 0:
                 terminated = True
-
 
         # 累计episodic reward
         self.episode_return += rewards
 
-        info = {'terminated': terminated, 'rewards': rewards}
+        info = {'terminated': terminated, 'rewards': rewards, 'remaining_prey': updated_state['num_prey']}
         if terminated:
-            # print(f"Remaining prey: {updated_state['num_prey']} {return_message}")
             info["episode_return"] = self.episode_return
             info["episode_steps"] = self.episode_steps
             if return_message != '':
@@ -223,6 +261,7 @@ class PredatorCapturePrey(BaseEnv):
         observations = {}
         for agent in self.agents:
             observations[agent.index] = agent.get_observation(state_space, self.agents)
+        # dimension [NUM_AGENTS, OBS_DIM].
 
         full_observations = []
         for i, agent in enumerate(self.agents):
