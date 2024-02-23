@@ -21,19 +21,11 @@ class PredatorCapturePreyGNN(BaseEnv):
 
         # 当前scenario的文件夹
         module_dir = os.path.dirname(__file__)
-        # with open(f'{module_dir}/predefined_agents.yaml', 'r') as stream:
-        #     self.predefined_agents = yaml.safe_load(stream)
 
         # 是否使用随机种子[-1不随机][任意其他数字 随机]
         if self.args.seed != -1:
             np.random.seed(self.args.seed)
 
-        # if args.hard_coded_coalition:
-        #     self.args.resample = False
-        #     with open(f'{module_dir}/grid_search_coalitions.yaml', 'r') as stream:
-        #         self.predefined_coalition = yaml.safe_load(stream)
-        #
-        # else:
         # 从预生成的coalition中加载，文件里包含所有robot的id和radius
         with open(f'{module_dir}/predefined_coalitions.yaml', 'r') as stream:
             self.predefined_coalition = yaml.safe_load(stream)
@@ -41,8 +33,6 @@ class PredatorCapturePreyGNN(BaseEnv):
         # n个agent
         self.num_robots = args.n_agents
         self.num_prey = args.num_prey
-        num_capture_agents = np.random.randint(self.num_robots - 1) + 1
-        num_predator_agents = self.num_robots - num_capture_agents
 
         # declare
         self.agent_poses = None  # robotarium convention poses
@@ -60,9 +50,10 @@ class PredatorCapturePreyGNN(BaseEnv):
             # [agent_x_pos, agent_y_pos, sensed_prey_x_pose , sensed_prey_y_pose, sensing_radius, capture_radius]
             # Returns the closest prey if multiple agents in range
             self.agent_obs_dim = 6
-        # elif self.args.agent_id:  # agent ids are one hot encoded
-        #     pass
-            # TODO
+        elif self.args.agent_id:
+            # agent ids are one hot encoded
+            # [agent_x_pos, agent_y_pos, sensed_prey_x_pose , sensed_prey_y_pose, sensing_radius, capture_radius, id]
+            self.agent_obs_dim = 7
         else:
             # [agent_x_pos, agent_y_pos, sensed_prey_x_pose , sensed_prey_y_pose]
             # Returns the closest prey if multiple agents in range
@@ -80,9 +71,9 @@ class PredatorCapturePreyGNN(BaseEnv):
         for i in range(self.num_robots):
             # 动作空间
             actions.append(spaces.Discrete(5))
-            # TODO: no neighbour here
 
-            # The lowest any observation will be is -5 (prey loc when can't see one), the highest is 3 (largest reasonable radius an agent will have)
+            # The lowest any observation will be is -5 (prey loc when can't see one),
+            # the highest is 3 (largest reasonable radius an agent will have)
             observations.append(spaces.Box(low=-5, high=3, shape=(self.agent_obs_dim,), dtype=np.float32))
             states.append(spaces.Box(low=-5, high=3, shape=(self.agent_state_dim,), dtype=np.float32))
 
@@ -154,20 +145,22 @@ class PredatorCapturePreyGNN(BaseEnv):
         return state_space
 
     def load_agents(self):
-        '''Loades the pre-defined agents / coalitions
-        '''
+        """
+        Load the pre-defined agents / coalitions
+        """
         t = "train"
         if self.args.test:
             t = "test"
         agents = []
 
         # sample a new coalition
+        # 是否规定选取第几个coalition
         if self.args.manual_coalition_selection:
             coalition_idx = self.args.coalition_selection
         else:
+            # 因为在coalition file里，专属于n个agent的scenario下，有n个coalition
             coalition_idx = np.random.randint(self.args.n_coalitions)
 
-        # coalition_idx = self.args.coalition_idx
         s = str(self.num_robots) + "_agents"
         capture_agents = self.predefined_coalition[t]["coalitions"][s][coalition_idx]["capture"]
         predator_agents = self.predefined_coalition[t]["coalitions"][s][coalition_idx]["predator"]
@@ -187,36 +180,8 @@ class PredatorCapturePreyGNN(BaseEnv):
         '''
         # episode数量+1
         self.episode_number += 1
+        # 是否在每个episode重新sample agent from the predefined coalitions
         if self.args.resample:
-            # #Initializes the agents
-            # num_capture_agents = np.random.randint(self.num_robots - 1) + 1
-            # num_predator_agents = self.num_robots - num_capture_agents
-            # self.agents = []
-
-            # # Initialize predator agents
-            # index = 0
-            # if self.args.test:
-            #     agent_type = 'test_predator'
-            #     predator_idxs = np.random.randint(self.args.n_predator_agents, size=num_predator_agents)
-            # else:
-            #     agent_type = 'predator'
-            #     predator_idxs = np.random.randint(self.args.n_test_predator_agents, size=num_predator_agents)
-            # for i in predator_idxs:
-            #     self.agents.append( Agent(index, self.predefined_agents[agent_type][i]['sensing_radius'],\
-            #                             0, self.action_id2w, self.action_w2id, self.args) )
-            #     index += 1
-
-            # # Initialize capture agents
-            # if self.args.test:
-            #     agent_type = 'test_capture'
-            #     capture_idxs = np.random.randint(self.args.n_test_capture_agents, size=num_capture_agents)
-            # else:
-            #     agent_type = 'capture'
-            #     capture_idxs = np.random.randint(self.args.n_capture_agents, size=num_capture_agents)
-            # for i in capture_idxs:
-            #     self.agents.append( Agent(index, 0, self.predefined_agents[agent_type][i]['capture_radius'],\
-            #                             self.action_id2w, self.action_w2id, self.args) )
-            #     index += 1
             self.agents = self.load_agents()
 
         self.episode_steps = 0
@@ -243,7 +208,7 @@ class PredatorCapturePreyGNN(BaseEnv):
 
         self.state_space = self._generate_state_space()
         self.env.reset()
-        # return [[0] * (self.agent_obs_dim * (self.args.num_neighbors + 1))] * self.num_robots
+
         return [[0] * self.agent_obs_dim] * self.num_robots
 
     def step(self, actions_):
